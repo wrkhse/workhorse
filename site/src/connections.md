@@ -13,8 +13,7 @@ draws the whole system; this page is the list of edges between the projects.
 | a stall | an MCP server | `mcp.call` through barn's gateway | [barn#1](https://github.com/wrkhse/barn/issues/1) |
 | GitHub, Slack | a stall | a webhook delivery barn verified | [barn#1](https://github.com/wrkhse/barn/issues/1) |
 | sourcefed | atelier | `item.matched` and `schedule.fired`, acknowledged once atelier saves the run | [atelier#42](https://github.com/wrkhse/atelier/issues/42) |
-| sourcefed | Chauffeur | each event, asked about before it is queued | [Chauffeur slice 2](/chauffeur/docs/plans/slices/slice-2) |
-| Chauffeur | sourcefed | `@fdcn/chauffeur/client`, which withholds an event before it is queued | [sourcefed#27](https://github.com/wrkhse/sourcefed/issues/27) |
+| sourcefed | Chauffeur | `@fdcn/chauffeur/client`: each event, asked about before it is queued, so every host gets one filtered stream | [sourcefed#27](https://github.com/wrkhse/sourcefed/issues/27), [Chauffeur slice 2](/chauffeur/docs/plans/slices/slice-2) |
 | rungs | atelier | the step machine inside every pipeline | [atelier#43](https://github.com/wrkhse/atelier/issues/43) |
 | rungs | Chauffeur | the step machine inside every strategy | [Chauffeur slice 3](/chauffeur/docs/plans/slices/slice-3) |
 | atelier | an agent session | a builder in its own worktree, from the base branch | [atelier](/atelier/docs/plans/slices/slice-1) |

@@ -9,8 +9,9 @@ the approvals queue, steering and `control`. It is the only place concrete
 implementations are chosen and wired together.
 
 ```sh
+workhorse run --profile repo-work -- opencode   # start an agent under a profile
 workhorse status                                # every session's grant and recent denials
-barn stalls start workhorse   # a request on its socket starts it too
+barn stalls start workhorse                   # a request on its socket starts it too
 ```
 
 ## Owns

@@ -14,7 +14,8 @@ How existing agents reach layer 1. A plugin is written once and runs in OpenCode
 
 ## Does not own
 
-- Deciding a verdict: that belongs to [`steering`](steering.md), evaluated in the daemon.
+- Deciding a verdict: that belongs to [`steering`](steering.md), evaluated in the
+  workhorse stall.
 
 ## Depends on
 
@@ -23,8 +24,10 @@ How existing agents reach layer 1. A plugin is written once and runs in OpenCode
 ## Decisions
 
 - **TypeScript**, because those agents load JavaScript plugins (2026-10-30).
-- **It forwards events and applies verdicts; the daemon decides** (2026-11-02).
-- **It reaches the daemon through the broker**, on the reserved `control` path, with the session's token (2026-11-02). It can use only `control`'s inside methods.
+- **It forwards events and applies verdicts; the workhorse stall decides**
+  (2026-11-02).
+- **It reaches the stall through the broker**, on the reserved `control` path, with
+  the session's token (2026-11-02). It can use only `control`'s inside methods.
 - **If the broker is unreachable, it fails closed** where the agent allows it: no verdict means no action.
 
 ## Open questions

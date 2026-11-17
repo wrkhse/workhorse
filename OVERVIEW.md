@@ -141,7 +141,7 @@ Where each one's code lives, and its slice, is in
 
 ## Roadmap
 
-**Status:** agreed. Milestone 1 and 2 are barn's work; nothing in this
+**Status:** agreed. Milestones 1 and 2 are barn's work; nothing in this
 repository is built.
 
 Each milestone is a vertical slice: the smallest set of modules that gives the
@@ -175,15 +175,8 @@ events tack relies on in milestone 3.
 
 ## Open questions
 
-Each module's own open questions are in its file. These span modules:
-
-- Whether every target agent resumes a session reliably enough for restart and
-  resume, and which steering events each one really reports and enforces.
-  [Planned spike](spike/resume-and-events/PLAN.md).
-- Which engine barn's plugin host settles on: QuickJS through rquickjs, or
-  earendil-works/djs.
-- How Chauffeur's plugin processes (its slice 5) run under barn, settled when its
-  stall is built.
+Each module's own open questions are in its file, and the ones that span modules
+are in [ARCHITECTURE.md](ARCHITECTURE.md#open-questions).
 
 ## Evidence
 

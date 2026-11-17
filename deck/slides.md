@@ -847,17 +847,16 @@ flowchart LR
         L["listeners"]
         BR["broker"]
     end
-    L -- "fd 3" --> ST["the stalls<br/>sourcefed, Chauffeur,<br/>workhorse, atelier"]
+    L -- "stall protocol" --> ST["the stalls<br/>sourcefed, Chauffeur,<br/>workhorse, atelier"]
     ST -- "net.request" --> BR
     BR -- "HTTPS, secret added" --> UP["GitHub, Jira, Slack,<br/>model providers"]
 ```
 
 <!--
-Before barn, every project shipped its own daemon, and each one repeated the same
-work: a listener, a sandbox, a way out to the network. Now one daemon does that part
-for all of them. It holds the listeners, so addresses and protocols do not change; it
-starts, restarts and upgrades each stall; it owns the sandbox; and it is the only way
-out to the network.
+One daemon does the part every project needs: a listener, a sandbox, a way out to
+the network. It holds the listeners, so a client's address and protocol do not
+change; it starts, restarts and upgrades each stall; it owns the sandbox; and it is
+the only way out to the network.
 
 A stall is only the project's own logic: its handlers, its polling, the events it
 emits. It gets no network and no secrets in its environment. When it needs the
