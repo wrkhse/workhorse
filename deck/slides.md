@@ -676,34 +676,36 @@ fix = "cargo fmt --all"
 run = "cargo clippy --workspace … -- -D warnings"
 
 [commands.mutants]
-run = "cargo mutants --in-diff target/mutants.diff"
+run = "cargo mutants --in-diff target/mutants.diff …"
 ```
 
 - A gate's `fix` runs in a hook before each of the builder's commits, so the fix
   lands in that commit.
-- Its `run` is one CI check, for each part of the repository the diff touches.
+- Its `run` is one CI check, in its own locked-down container, for each part of
+  the repository the diff touches.
 
 </div>
 <div>
 
 ```text
-commands/fmt        pass   25 s
-commands/clippy     pass   24 s
-commands/nextest    pass   58 s
-commands/doctest    pass   21 s
-commands/rustdoc    pass   23 s
-commands/deny       pass  112 s
-commands/shear      pass   64 s
-commands/msrv       pass   32 s
-commands/kani       pass    7 min
-commands/mutants    pass   40 min
-commands/prettier   pass   12 s
-commands/readmes    pass   11 s
+commands/fmt          pass    0.2 s
+commands/clippy       pass    8.5 s
+commands/nextest      pass   56.3 s
+commands/doctest      pass    6.7 s
+commands/rustdoc      pass    8.0 s
+commands/deny         pass  124.1 s
+commands/shear        pass   51.6 s
+commands/msrv         pass   13.8 s
+commands/kani         pass  338.6 s
+commands/mutants      pass  211.7 s
+commands/prettier     pass    0.9 s
+commands/readmes      pass    1.1 s
+commands/actionlint   pass    8.4 s
 ```
 
 <div class="text-sm opacity-80">
-One PR's checks. Ruff and actionlint didn't run: it touched neither
-<code>scripts/</code> nor <code>.github/</code>.
+One PR's checks, each timed inside its container. Ruff didn't run: the PR
+touched nothing in <code>scripts/</code>.
 </div>
 </div>
 </div>
@@ -711,9 +713,11 @@ One PR's checks. Ruff and actionlint didn't run: it touched neither
 <!--
 A project lists its gates once, as commands. A gate with a fix runs it in a commit
 hook atelier puts in the builder's worktree, so formatting never becomes a CI
-failure. Every gate's run command becomes its own check in GitHub's CI, and only for
-the parts of the repository the diff touches. On the right, atelier's own PR 55:
-twelve gates, each its own check.
+failure. Every gate's run command becomes its own check in GitHub's CI, in its own
+container, and only for the parts of the repository the diff touches. On the right,
+atelier's own PR 64, the one that moved it to Rust 1.100: thirteen gates, each its
+own check. The times are the gates' own; building each container adds about a
+minute around them.
 -->
 
 ---
@@ -726,22 +730,38 @@ twelve gates, each its own check.
 | Clippy, rustdoc | there's any warning, in the code or its docs |
 | nextest, doctests | behavior breaks, or an example in the docs stops running |
 | cargo-deny, cargo-shear | a licence isn't allowed, a crate is yanked or doubled, a dependency is unused |
-| MSRV | the code needs a newer Rust than the project supports |
-| Kani | a proof about the issue machine no longer holds |
-| cargo-mutants | a test passes whatever the code does: each line the PR touched is broken on purpose, and some test must fail |
+| MSRV | the code needs a newer Rust than the `rust-version` in `Cargo.toml` (1.100), checked with exactly that toolchain |
+| Kani | a proof about the issue machine no longer holds, or one of its two core proofs is missing |
+| cargo-mutants | a test passes whatever the code does: each changed line is broken on purpose, and no mutant may survive or time out |
 
-<div class="text-sm opacity-80 mt-4">
-Planned: once every check passes, a critic agent reviews the PR with evidence, and a
-recording shows the feature working.
+<div class="text-sm opacity-80 mt-2">
+Every gate runs in GitHub's CI, in a locked-down container: no root, no
+capabilities, no secrets, bounded memory and processes. A fresh offline container
+checks the Kani and mutation reports; a missing or empty one fails the gate.
 </div>
 
 <!--
+The container: user 10001, all capabilities dropped, no-new-privileges, its own PID
+namespace, no Docker socket or secrets, bounded memory, CPU and 4,096 processes.
+
 These are atelier's own gates. The one that matters most for agent-written code is
 mutation testing: agents are good at writing tests that pass. cargo-mutants changes
 each line the PR touched, flipping a condition or returning a default, and fails the
-check if no test notices. That's how you know the tests test something. Language
-plugins will bring these defaults to any Rust, TypeScript or TLA+ project; the
-critic and the recording are the next stages.
+check if no test notices. That's how you know the tests test something. When a PR
+touches no line it can mutate, it mutates a fixed canary instead, 18 mutants in the
+step runner's cleanup, so the report is never empty.
+
+The MSRV gate reads the minimum from Cargo.toml, so raising it to 1.100 needed no
+config change, and it never installs a toolchain on the fly.
+
+Why the container: on 13 November a local mutation run changed atelier's own
+process-group check to accept group 1, and a cleanup test reached kill -KILL -1 on
+the Mac. Every group signal now goes through one guard, but a guard is defence in
+depth: a mutant can change the guard too. The container is the containment.
+
+Language plugins will bring these defaults to any Rust, TypeScript or TLA+
+project. A critic agent's review and a recording of the feature are the next
+stages.
 -->
 
 ---
