@@ -830,6 +830,44 @@ into proven pull requests.
 -->
 
 ---
+layout: center
+---
+
+# One daemon, many stalls
+
+barn holds every listener and every sandbox. Each project ships a **stall**: its
+own handlers, jobs and events, in its own child process, with no network and no
+secrets.
+
+```mermaid {scale: 0.6}
+flowchart LR
+    HC["OpenCode · Pi ·<br/>Claude Code · Codex"] -- "a plugin" --> TK["tack"]
+    TK -- "JSON-RPC or SSE" --> L
+    subgraph BARN["barn: one daemon"]
+        L["listeners"]
+        BR["broker"]
+    end
+    L -- "stall protocol" --> ST["the stalls<br/>sourcefed, Chauffeur,<br/>workhorse, atelier"]
+    ST -- "net.request" --> BR
+    BR -- "HTTPS, secret added" --> UP["GitHub, Jira, Slack,<br/>model providers"]
+```
+
+<!--
+One daemon does the part every project needs: a listener, a sandbox, a way out to
+the network. It holds the listeners, so a client's address and protocol do not
+change; it starts, restarts and upgrades each stall; it owns the sandbox; and it is
+the only way out to the network.
+
+A stall is only the project's own logic: its handlers, its polling, the events it
+emits. It gets no network and no secrets in its environment. When it needs the
+network it asks barn, and barn adds the key after the request leaves.
+
+barn's repository and gates exist today, B0. The supervisor is next, B1. sourcefed's
+stall comes first, then Chauffeur's after 1.0, the workhorse stall on demand, and
+atelier last. For development and CI, barn run <stall> runs one in the foreground.
+-->
+
+---
 layout: two-cols
 ---
 
@@ -850,7 +888,7 @@ flowchart TB
     App["atelier<br/>an application"] --> H
     H["3 · Harness<br/>Chauffeur"] --> R
     R["2 · Runtime<br/>sourcefed, the inbox"] --> T
-    T["1 · Trust<br/>grants, sandbox, broker, steering"]
+    T["1 · Trust<br/>the contracts here,<br/>barn that enforces them"]
 ```
 
 </div>
@@ -864,12 +902,15 @@ you own. Each can help you on its own, or they work together.
 
 # What's next
 
-- **atelier**: pipelines of steps, then runs started by sourcefed
-- **Chauffeur v2**: the same behavior, rebuilt as an engine of judges, adapters for
-  Pi, Claude Code and Codex
-- **sourcefed**: one triage for every host, through Chauffeur
-- **Workhorse**: milestone 1, Contained: grants, sandbox and the broker
-- **wrkhse**: every project in one GitHub organization
+- **barn**: the supervisor, then the enforcers: the one daemon every project runs on
+- **sourcefed**: its stall, the providers unchanged as plugins, and triage through
+  Chauffeur
+- **Chauffeur v2**: slices to 1.0, then its stall; adapters for Pi, Claude Code and
+  Codex
+- **atelier**: pipelines of steps, runs started by sourcefed, then its stall last
+- **Workhorse**: milestones 1 and 2, the contracts and the workhorse stall, with barn
+- **wrkhse**: every project in one organization, and one trace across them when o11y
+  resumes
 
 ---
 layout: section

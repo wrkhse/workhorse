@@ -1,6 +1,8 @@
 # `grant`
 
-**Kind:** contract, layer 1. **Status:** proposed, not built. Built first, because every other module enforces it.
+**Kind:** contract. **Status:** designed, not built. **Code:** the `grant` crate in
+this repository. **Plan:** [barn#1](https://github.com/wrkhse/barn/issues/1); barn's
+enforcers use it from B1. Built first, because every other module enforces it.
 
 What an agent session may touch: files, network hosts, secrets by name, tools and limits. Every enforcer asks this module the same question: does this grant allow this action?
 

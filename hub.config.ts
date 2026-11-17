@@ -51,6 +51,7 @@ export const hub = {
         "OVERVIEW.md",
         "PHILOSOPHY.md",
         "ARCHITECTURE.md",
+        "HARNESS.md",
         "modules/*.md",
       ],
       exclude: [],

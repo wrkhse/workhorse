@@ -1,6 +1,8 @@
 # `tack`
 
-**Kind:** bridge, TypeScript. **Status:** designed, not built. Lives in its own repository, [`wrkhse/tack`](https://github.com/wrkhse/tack).
+**Kind:** bridge, TypeScript. **Status:** T1, the core with OpenCode and Pi, is in
+progress. **Code:** [`wrkhse/tack`](https://github.com/wrkhse/tack). **Plan:**
+[tack#1](https://github.com/wrkhse/tack/issues/1).
 
 How existing agents reach layer 1. A plugin is written once and runs in OpenCode, Pi, Claude Code and Codex. For Workhorse, it forwards each agent's hook events to [`steering`](steering.md) over [`control`](control.md) and applies the verdicts. It is also useful without Workhorse, as a general plugin SDK for coding agents.
 
@@ -12,7 +14,8 @@ How existing agents reach layer 1. A plugin is written once and runs in OpenCode
 
 ## Does not own
 
-- Deciding a verdict: that belongs to [`steering`](steering.md), evaluated in the daemon.
+- Deciding a verdict: that belongs to [`steering`](steering.md), evaluated in the
+  workhorse stall.
 
 ## Depends on
 
@@ -21,8 +24,10 @@ How existing agents reach layer 1. A plugin is written once and runs in OpenCode
 ## Decisions
 
 - **TypeScript**, because those agents load JavaScript plugins (2026-10-30).
-- **It forwards events and applies verdicts; the daemon decides** (2026-11-02).
-- **It reaches the daemon through the broker**, on the reserved `control` path, with the session's token (2026-11-02). It can use only `control`'s inside methods.
+- **It forwards events and applies verdicts; the workhorse stall decides**
+  (2026-11-02).
+- **It reaches the stall through the broker**, on the reserved `control` path, with
+  the session's token (2026-11-02). It can use only `control`'s inside methods.
 - **If the broker is unreachable, it fails closed** where the agent allows it: no verdict means no action.
 
 ## Open questions

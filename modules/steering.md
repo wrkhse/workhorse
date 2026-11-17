@@ -1,6 +1,8 @@
 # `steering`
 
-**Kind:** contract, layer 1. **Status:** proposed, not built.
+**Kind:** contract. **Status:** designed, not built; the workhorse stall evaluates
+rules at B9. **Code:** the `steering` crate in this repository. **Plan:**
+[barn#1](https://github.com/wrkhse/barn/issues/1), slice B9.
 
 Rules that fire on an agent's events and block, rewrite or ask a human. Steering works inside a session's grant: it can make an action narrower or stop it, never allow what the grant does not.
 
@@ -24,7 +26,7 @@ Rules that fire on an agent's events and block, rewrite or ask a human. Steering
 
 - **The grant is the ceiling.** A rule can block, rewrite or ask, never widen (2026-11-02).
 - **Rules about arguments belong here**, not in the grant (2026-11-02).
-- **Rules are evaluated in the daemon**, the one source of truth (2026-11-02). tack forwards events and applies verdicts. tack embeds this crate as wasm only if the round trip proves too slow.
+- **Rules are evaluated in the workhorse stall**, the one source of truth (2026-11-02). tack forwards events and applies verdicts. tack embeds this crate as wasm only if the round trip proves too slow.
 
 ## Open questions
 
