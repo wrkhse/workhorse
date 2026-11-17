@@ -731,33 +731,35 @@ minute around them.
 | nextest, doctests | behavior breaks, or an example in the docs stops running |
 | cargo-deny, cargo-shear | a licence isn't allowed, a crate is yanked or doubled, a dependency is unused |
 | MSRV | the code needs a newer Rust than the `rust-version` in `Cargo.toml` (1.100), checked with exactly that toolchain |
-| Kani | a proof about the issue machine no longer holds, or one of its two core proofs is missing |
+| Kani | a proof about the issue machine no longer holds; in atelier's own CI, both core proofs must run |
 | cargo-mutants | a test passes whatever the code does: each changed line is broken on purpose, and no mutant may survive or time out |
 
 <div class="text-sm opacity-80 mt-2">
-Every gate runs in GitHub's CI, in a locked-down container: no root, no
-capabilities, no secrets, bounded memory and processes. A fresh offline container
-checks the Kani and mutation reports; a missing or empty one fails the gate.
+In CI, every gate runs in a locked-down container: no root, no capabilities, no
+credentials, bounded memory and processes. A fresh offline container checks the
+Kani and mutation reports; a missing or empty one fails the gate.
 </div>
 
 <!--
 The container: user 10001, all capabilities dropped, no-new-privileges, its own PID
-namespace, no Docker socket or secrets, bounded memory, CPU and 4,096 processes.
+namespace, no Docker socket or credentials, bounded memory, CPU and 4,096 processes.
 
 These are atelier's own gates. The one that matters most for agent-written code is
 mutation testing: agents are good at writing tests that pass. cargo-mutants changes
 each line the PR touched, flipping a condition or returning a default, and fails the
-check if no test notices. That's how you know the tests test something. When a PR
-touches no line it can mutate, it mutates a fixed canary instead, 18 mutants in the
-step runner's cleanup, so the report is never empty.
+check if no test notices. That's how you know the tests test something. When the
+mutants gate runs but the diff selects no mutant, it mutates a fixed canary instead,
+the background step runner in crates/cli/src/command_step/run.rs, so the report is
+never empty. A change only to docs, scripts or .github plans no mutants gate at all.
 
 The MSRV gate reads the minimum from Cargo.toml, so raising it to 1.100 needed no
-config change, and it never installs a toolchain on the fly.
+config change. It installs that toolchain in setup, and the check runs with
+RUSTUP_AUTO_INSTALL=0, so it never auto-installs one.
 
 Why the container: on 13 November a local mutation run changed atelier's own
 process-group check to accept group 1, and a cleanup test reached kill -KILL -1 on
 the Mac. Every group signal now goes through one guard, but a guard is defence in
-depth: a mutant can change the guard too. The container is the containment.
+depth: a mutant can change the guard too. In CI, the container is the containment.
 
 Language plugins will bring these defaults to any Rust, TypeScript or TLA+
 project. A critic agent's review and a recording of the feature are the next
