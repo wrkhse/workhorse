@@ -714,7 +714,9 @@ touched nothing in <code>scripts/</code>.
 A project lists its gates once, as commands. A gate with a fix runs it in a commit
 hook atelier puts in the builder's worktree, so formatting never becomes a CI
 failure. Every gate's run command becomes its own check in GitHub's CI, in its own
-container, and only for the parts of the repository the diff touches. On the right,
+container, and only for the parts of the repository the diff touches. atelier's
+daemon on the Mac runs none of them; it reads their results through forge.checks.
+On the right,
 atelier's own PR 64, the one that moved it to Rust 1.100: thirteen gates, each its
 own check. The times are the gates' own; building each container adds about a
 minute around them.
@@ -735,9 +737,11 @@ minute around them.
 | cargo-mutants | a test passes whatever the code does: each changed line is broken on purpose, and no mutant may survive or time out |
 
 <div class="text-sm opacity-80 mt-2">
-In CI, every gate runs in a locked-down container: no root, no capabilities, no
-credentials, bounded memory and processes. A fresh offline container checks the
-Kani and mutation reports; a missing or empty one fails the gate.
+Every gate runs in GitHub's CI, in a locked-down container: no root, no
+capabilities, no credentials, bounded memory and processes. atelier's daemon runs
+none on the Mac; it reads their results through <code>forge.checks</code>. A fresh
+offline container checks the Kani and mutation reports; a missing or empty one
+fails the gate.
 </div>
 
 <!--
@@ -759,7 +763,12 @@ RUSTUP_AUTO_INSTALL=0, so it never auto-installs one.
 Why the container: on 13 November a local mutation run changed atelier's own
 process-group check to accept group 1, and a cleanup test reached kill -KILL -1 on
 the Mac. Every group signal now goes through one guard, but a guard is defence in
-depth: a mutant can change the guard too. In CI, the container is the containment.
+depth: a mutant can change the guard too. The container is the containment.
+
+Under the owner's proof contract, the installed daemon orchestrates real
+repositories and pull requests, while mutation, fuzzing and process-signalling
+checks run only in contained CI, which it observes through forge.checks. A local
+command step in the proof is benign, bounded and confined to repository data.
 
 Language plugins will bring these defaults to any Rust, TypeScript or TLA+
 project. A critic agent's review and a recording of the feature are the next
