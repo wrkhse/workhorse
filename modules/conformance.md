@@ -1,6 +1,8 @@
 # `conformance`
 
-**Kind:** test suites, layer 1. **Status:** proposed, not built.
+**Kind:** test suites. **Status:** designed, not built; each suite lands with the
+slice that builds the enforcer it tests. **Code:** suites in this repository.
+**Plan:** [barn#1](https://github.com/wrkhse/barn/issues/1).
 
 One suite per protocol. An implementation in any language that passes a suite implements that protocol. Every suite includes a deliberate break that must make it fail.
 
@@ -22,7 +24,7 @@ Product code. Suites depend on the contracts and test implementations from outsi
 
 ## Depends on
 
-The contract modules.
+The contract modules. They test barn's enforcers from outside, as any implementation would be tested.
 
 ## Evidence
 

@@ -1,6 +1,8 @@
 # `tack`
 
-**Kind:** bridge, TypeScript. **Status:** designed, not built. Lives in its own repository, [`wrkhse/tack`](https://github.com/wrkhse/tack).
+**Kind:** bridge, TypeScript. **Status:** T1, the core with OpenCode and Pi, is in
+progress. **Code:** [`wrkhse/tack`](https://github.com/wrkhse/tack). **Plan:**
+[tack#1](https://github.com/wrkhse/tack/issues/1).
 
 How existing agents reach layer 1. A plugin is written once and runs in OpenCode, Pi, Claude Code and Codex. For Workhorse, it forwards each agent's hook events to [`steering`](steering.md) over [`control`](control.md) and applies the verdicts. It is also useful without Workhorse, as a general plugin SDK for coding agents.
 

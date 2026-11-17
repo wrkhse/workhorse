@@ -1,6 +1,9 @@
 # `approvals`
 
-**Kind:** contract, layer 1. **Status:** proposed, not built. Built second, because steering and grants both need it.
+**Kind:** contract. **Status:** designed, not built; the queue lives in the
+workhorse stall at B9. **Code:** the `approvals` crate in this repository.
+**Plan:** [barn#1](https://github.com/wrkhse/barn/issues/1), slice B9. Built second,
+because steering and grants both need it.
 
 How a human answers a request for a decision. Two things ask: a steering rule whose verdict is "ask", and an agent that wants a wider grant.
 
@@ -14,7 +17,7 @@ How a human answers a request for a decision. Two things ask: a steering rule wh
 
 - Where the question appears (terminal, phone): that belongs to [`control`](control.md) clients.
 - What an approved widening changes: that belongs to [`grant`](grant.md).
-- Storage: the daemon in [`workhorse`](workhorse.md) supplies it.
+- Storage: the workhorse stall in [`workhorse`](workhorse.md) supplies it.
 
 ## Depends on
 

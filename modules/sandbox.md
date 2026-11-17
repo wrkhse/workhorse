@@ -1,14 +1,17 @@
 # `sandbox`
 
-**Kind:** enforcer, layer 1. **Status:** proposed, not built.
+**Kind:** enforcer. **Status:** planned, in barn: `barn-exec` on macOS at B1 and on
+Linux at B6. **Code:** `barn-exec` in
+[wrkhse/barn](https://github.com/wrkhse/barn). **Plan:**
+[barn#1](https://github.com/wrkhse/barn/issues/1).
 
-Turns a grant into an operating-system policy and launches the agent under it. File access, limits and the single allowed network destination are enforced here.
+Turns a grant into an operating-system policy and starts a process under it: a stall, an agent or an MCP server. File access, limits and the single allowed network destination are enforced here.
 
 ## Owns
 
 - Translating a grant into a backend policy.
 - Backends: nono on macOS, bubblewrap on Linux.
-- Launching the agent, and stopping its whole process tree.
+- Starting a stall, an agent or an MCP server, and stopping its whole process tree.
 
 ## Does not own
 
@@ -17,7 +20,7 @@ Turns a grant into an operating-system policy and launches the agent under it. F
 
 ## Depends on
 
-[`grant`](grant.md). Native only; this is the one module that touches Seatbelt, Landlock or bubblewrap.
+[`grant`](grant.md). Native only; this is the one module that touches Seatbelt, Landlock or bubblewrap. It lives in barn, which depends on the contract by tag.
 
 ## Decisions
 

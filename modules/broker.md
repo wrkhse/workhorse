@@ -1,6 +1,7 @@
 # `broker`
 
-**Kind:** enforcer, layer 1. **Status:** proposed, not built.
+**Kind:** enforcer. **Status:** planned, in barn's B2. **Code:** `crates/barn`.
+**Plan:** [barn#1](https://github.com/wrkhse/barn/issues/1).
 
 The one network exit for every sandboxed agent. It checks each request against the session's grant, adds secrets the agent never sees, and logs every request.
 
@@ -26,9 +27,12 @@ The one network exit for every sandboxed agent. It checks each request against t
 - **Secrets over HTTPS** (2026-11-02): clients that accept a base URL, such as model providers, point at the broker's own address. A certificate authority trusted inside the sandbox is the fallback, used only where a base URL cannot change.
 - **`git` uses HTTPS through the broker**, which adds the token. SSH is denied until there is a real need (2026-11-02).
 - **Never follow a redirect.** Return it to the agent; the follow-up request is checked against the grant like any other.
-- **Runs inside the daemon** with the gateway, as a separate crate (2026-11-02).
+- **Runs in barn** with the gateway, as a separate crate (2026-11-02).
 - **Carries `control` from inside the sandbox** on one reserved path, `/_workhorse/control`, which is never forwarded (2026-11-02). See [`control`](control.md).
 - **Secrets live in one encrypted file** in the user's config, in the [age](https://age-encryption.org/) format (2026-11-02). The file's key is kept in the macOS Keychain or the Linux Secret Service where one exists, so an on-demand daemon starts silently. On a server without a keyring, the daemon asks for a passphrase once and keeps the key in memory until it exits. The `age` crate is a production dependency and needs approval when the broker is built.
+- **Budgets are per secret** (2026-11-17). One file,
+  `~/.config/barn/budgets.toml`, sets them, and every stall that names that secret
+  shares them. Rate limits are honoured, and a deferral never blocks.
 - **A request in flight when the broker restarts reports an unknown outcome and is never resent** (2026-11-02). Workhorse never repeats a request that may already have had its effect.
 
 ## Evidence

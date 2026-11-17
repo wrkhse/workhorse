@@ -20,18 +20,32 @@ Every project follows [the Workhorse philosophy](/workhorse/PHILOSOPHY):
 - **Proof.** A behavior is done when an executed check, one that would fail
   if it broke, shows it working through its real boundary.
 
+## The system
+
+One daemon, **barn**, runs every project's logic as a **stall**: a child process
+with its own handlers, jobs and events, no network and no secrets of its own.
+barn holds every listener a client connects to, adds the secrets, and is the
+only way out to the network. The contracts a stall runs under live in Workhorse.
+
+[The architecture](/workhorse/ARCHITECTURE) draws the whole system, with each
+part's status and where its code lives.
+
 ## The projects
 
 | Project | What it does | Language |
 | --- | --- | --- |
-| [Workhorse](/workhorse/) | Open protocols in three layers: trust, runtime and harness | Rust |
+| [barn](https://github.com/wrkhse/barn) | The only daemon: a supervisor, a stall per project, and the enforcers | Rust |
+| [Workhorse](/workhorse/) | The contracts barn enforces: grant, steering, approvals, control | Rust |
 | [atelier](/atelier/) | A personal software factory: a labelled issue becomes a proven, released pull request | Rust |
 | [rungs](/rungs/) | A small step machine shared by atelier and Chauffeur: `no_std`, no allocation, no dependencies, proven with Kani | Rust |
 | [sourcefed](/sourcefed/) | Tells agents and programs what changed in GitHub, Jira, Slack, feeds and schedules | TypeScript |
 | [Chauffeur](/chauffeur/) | Judges what a coding agent is doing and steers it: sense, classify, act | Rust, TypeScript adapters |
 | [tack](/tack/) | Write a coding-agent plugin once and run it in OpenCode, Pi, Claude Code and Codex | TypeScript |
 
-[How they connect](/connections) draws the links between them, and
+[o11y](https://github.com/wrkhse/o11y), one trace across every module, is
+proposed and paused.
+
+[How they connect](/connections) lists what crosses between them, and
 [the roadmap](/roadmap) shows where each one is.
 
 ## Why one hub
