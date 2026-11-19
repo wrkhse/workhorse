@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { hub } from "../../hub.config"
 import { linker } from "./links"
 
-const readme = { project: "sourcefed", page: "sourcefed/index.md", source: "README.md" }
-const daemon = { project: "sourcefed", page: "sourcefed/docs/daemon.md", source: "docs/daemon.md" }
+const readme = { project: "sourcefed", page: "sourcefed/index.md", source: "README.md", group: "overview" } as const
+const daemon = { project: "sourcefed", page: "sourcefed/docs/daemon.md", source: "docs/daemon.md", group: "guides" } as const
 const links = linker([readme, daemon])
 
 describe("a GitHub link in a pulled page", () => {

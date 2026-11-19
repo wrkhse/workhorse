@@ -10,12 +10,11 @@ import { dirname, join, posix, resolve } from "node:path"
 import { Glob } from "bun"
 import { hub, type Project } from "../../hub.config"
 import { SITE, SOURCES, SRC, MANIFEST, type Pulled } from "../.vitepress/sources"
+import { roadmap } from "./roadmap"
+import { held, select } from "./select"
 
 const ROOT = resolve(SITE, "..")
 const DECK = join(ROOT, "deck")
-
-/** Files no reader of the site needs, wherever a project keeps them. */
-const NEVER = ["**/AGENTS.md", "**/CLAUDE.md"]
 
 const cloned = new Set<string>()
 
@@ -52,16 +51,6 @@ function checkout(project: Project, branch = project.branch): string {
   return into
 }
 
-function matching(root: string, project: Project): string[] {
-  const excluded = [...project.exclude, ...NEVER].map((pattern) => new Glob(pattern))
-  const found = project.pages.flatMap((pattern) => [
-    ...new Glob(pattern).scanSync({ cwd: root, dot: false }),
-  ])
-  return [...new Set(found)]
-    .filter((file) => !excluded.some((glob) => glob.match(file)))
-    .toSorted()
-}
-
 /** A folder's `README.md` is its index page, so a link to the folder lands on it. */
 const sitePath = (source: string) =>
   source.replace(/(^|\/)README\.md$/, "$1index.md")
@@ -80,13 +69,31 @@ function images(markdown: string): string[] {
     .filter((src) => src !== "" && !/^([a-z]+:|\/)/i.test(src))
 }
 
-function pull(project: Project): Pulled[] {
+/**
+ * Writes a project's selected pages under its id, with the media they show,
+ * and leaves out the pages still planned or held. Every project's section
+ * opens on its overview, so a project without one fails the pull.
+ */
+function pull(project: Project): { pages: Pulled[]; held: number } {
   const root = checkout(project)
   const into = join(SRC, project.id)
   rmSync(into, { recursive: true, force: true })
-  return matching(root, project).map((source) => {
-    const page = posix.join(project.id, sitePath(source))
+  const files = (pattern: string) => [
+    ...new Glob(pattern).scanSync({ cwd: root, dot: false }),
+  ]
+  const selected = select(project, files)
+  for (const pattern of selected.unmatched)
+    console.warn(`${project.repo}: nothing matches ${pattern}`)
+
+  const pages: Pulled[] = []
+  let skipped = 0
+  for (const { source, group } of selected.pages) {
     const markdown = readFileSync(join(root, source), "utf8")
+    if (held(markdown)) {
+      skipped += 1
+      continue
+    }
+    const page = posix.join(project.id, sitePath(source))
     mkdirSync(dirname(join(SRC, page)), { recursive: true })
     writeFileSync(join(SRC, page), markdown)
     for (const image of images(markdown)) {
@@ -94,8 +101,14 @@ function pull(project: Project): Pulled[] {
       if (from.startsWith("..") || !existsSync(join(root, from))) continue
       cpSync(join(root, from), join(into, from))
     }
-    return { project: project.id, page, source }
-  })
+    pages.push({ project: project.id, page, source, group })
+  }
+
+  if (!pages.some((page) => page.group === "overview"))
+    throw new Error(
+      `${project.repo}@${project.branch}: no overview page at ${project.overview}`,
+    )
+  return { pages, held: skipped }
 }
 
 /**
@@ -139,10 +152,14 @@ function pullDemos(): void {
 }
 
 const pulled = hub.projects.flatMap((project) => {
-  const pages = pull(project)
-  console.log(`${project.repo}@${project.branch}: ${pages.length} pages`)
-  return pages
+  const result = pull(project)
+  console.log(
+    `${project.repo}@${project.branch}: ${result.pages.length} pages, ${result.held} held`,
+  )
+  return result.pages
 })
 mkdirSync(SOURCES, { recursive: true })
 writeFileSync(MANIFEST, `${JSON.stringify(pulled, null, 2)}\n`)
 pullDemos()
+writeFileSync(join(SRC, "roadmap.md"), await roadmap())
+console.log("roadmap: written")

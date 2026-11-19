@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { Group } from "../../hub.config"
 
 /** The site's package folder. */
 export const SITE = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -19,4 +20,6 @@ export type Pulled = {
   page: string
   /** Relative to the project's root, such as `docs/plans/README.md`. */
   source: string
+  /** The group of its project's section it sits in. */
+  group: Group
 }
