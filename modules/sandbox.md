@@ -15,12 +15,12 @@ Turns a grant into an operating-system policy and starts a process under it: a s
 
 ## Does not own
 
-- Deciding what is allowed: that belongs to [`grant`](grant.md).
+- Deciding what is allowed: that belongs to [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md).
 - Network traffic beyond letting it reach the broker: that belongs to [`broker`](broker.md).
 
 ## Depends on
 
-[`grant`](grant.md). Native only; this is the one module that touches Seatbelt, Landlock or bubblewrap. It lives in barn, which depends on the contract by tag.
+[`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md). Native only; this is the one module that touches Seatbelt, Landlock or bubblewrap. It lives in barn, which depends on the contract by tag.
 
 ## Decisions
 

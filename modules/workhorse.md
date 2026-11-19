@@ -17,8 +17,8 @@ barn stalls start workhorse                   # a request on its socket starts i
 ## Owns
 
 - The CLI.
-- The workhorse stall, which holds sessions, the [`steering`](steering.md) evaluation
-  and the [`approvals`](approvals.md) queue, and serves [`control`](control.md). barn
+- The workhorse stall, which holds sessions, the [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md) evaluation
+  and the [`approvals`](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) queue, and serves [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md). barn
   supplies the enforcers.
 - Loading profiles, storing sessions, approvals and logs.
 - Asking barn to start each agent as a guarded process under the session's grant,

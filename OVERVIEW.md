@@ -32,16 +32,17 @@ through these, and a person can see and change all of it.
 
 | Protocol | Question it answers |
 |---|---|
-| [**Grants**](modules/grant.md) | What may this agent touch: paths, hosts, secrets by name, tools |
+| [**Grants**](https://github.com/wrkhse/barn/blob/main/docs/grant.md) | What may this agent touch: paths, hosts, secrets by name, tools |
 | [**Sandbox**](modules/sandbox.md) | How an operating system enforces a grant (nono on macOS, bubblewrap on Linux) |
 | [**Broker**](modules/broker.md) | How network traffic leaves, with secrets added outside the agent so the agent never holds them |
 | [**Tool gateway**](modules/gateway.md) | How an agent reaches MCP servers through one door that applies its grant |
-| [**Steering**](modules/steering.md) | Rules that fire on an agent's events and block, rewrite, or ask a person |
-| [**Approvals**](modules/approvals.md) | How a person answers a request for a decision: a steering "ask" or a request to widen a grant |
-| [**Control**](modules/control.md) | How a person, the CLI and tack talk to the other six: sessions, grants, approvals, steering verdicts |
+| [**Steering**](https://github.com/wrkhse/barn/blob/main/docs/steering.md) | Rules that fire on an agent's events and block, rewrite, or ask a person |
+| [**Approvals**](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) | How a person answers a request for a decision: a steering "ask" or a request to widen a grant |
+| [**Control**](https://github.com/wrkhse/barn/blob/main/docs/control.md) | How a person, the CLI and tack talk to the other six: sessions, grants, approvals, steering verdicts |
 
-The contracts live in this repository: a grant, the rules that steer an agent,
-the approvals queue, and the protocol a client speaks. barn enforces them:
+The contracts live in [wrkhse/barn](https://github.com/wrkhse/barn): a grant,
+the rules that steer an agent, the approvals queue, and the protocol a client speaks.
+barn enforces them:
 `barn-exec` applies a stall's sandbox, the broker is the only network exit, and
 the gateway is the one door to MCP servers. barn starts each stall, and each
 agent and local MCP server, in its own child process under its own grant.
@@ -98,7 +99,7 @@ deployment choice, and the process is barn's.
 
 ```mermaid
 flowchart TB
-    subgraph C["Contracts: pure Rust, no I/O, also built for wasm<br/>in wrkhse/workhorse"]
+    subgraph C["Contracts: pure Rust, no I/O, also built for wasm<br/>in wrkhse/barn"]
         G["grant"]
         S["steering"]
         A["approvals"]
@@ -120,10 +121,10 @@ three. Enforcers depend only on contracts, never on each other, and live in barn
 
 | Module | Kind | Owns |
 |---|---|---|
-| [`grant`](modules/grant.md) | Contract | Grant and profile schema; whether a grant allows an action; narrowing, and widening by approval |
-| [`steering`](modules/steering.md) | Contract | Normalized agent events, the rule format, and verdicts: allow, block, rewrite, ask |
-| [`approvals`](modules/approvals.md) | Contract | Request and answer records, the queue's state machine, request IDs |
-| [`control`](modules/control.md) | Contract | JSON-RPC methods for sessions, grants, approvals and steering; used by tack, the CLI and a phone |
+| [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md) | Contract | Grant and profile schema; whether a grant allows an action; narrowing, and widening by approval |
+| [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md) | Contract | Normalized agent events, the rule format, and verdicts: allow, block, rewrite, ask |
+| [`approvals`](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) | Contract | Request and answer records, the queue's state machine, request IDs |
+| [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md) | Contract | JSON-RPC methods for sessions, grants, approvals and steering; used by tack, the CLI and a phone |
 | [`sandbox`](modules/sandbox.md) | Enforcer | Turns a grant into an OS policy and starts the process under it, with nono and bubblewrap backends |
 | [`broker`](modules/broker.md) | Enforcer | The one network exit: checks the grant, adds secrets, logs every request, never follows a redirect |
 | [`gateway`](modules/gateway.md) | Enforcer | An MCP proxy that exposes only the tools a grant lists |
@@ -164,9 +165,9 @@ flowchart TB
 
 | Milestone | Delivers | Done when |
 |---|---|---|
-| **1 · Contained** | [`grant`](modules/grant.md), [`sandbox`](modules/sandbox.md) and [`broker`](modules/broker.md), in barn's B1 and B2, with the workhorse stall's status command in B9 | OpenCode completes a task with a real model under a profile. The model key reaches the provider through the broker and never appears in the agent's files or environment. A request outside the grant is denied and logged. Escape and egress suites pass |
-| **2 · Asked** | [`approvals`](modules/approvals.md) and [`control`](modules/control.md) on the Unix socket, live narrowing, widening by approval, restart and resume for file changes (B9) | A request to a host outside the grant appears in the queue. Answering it from the CLI as "once" or "add to the grant" takes effect; an unanswered one is denied at its timeout. A file-grant change restarts and resumes the session |
-| **3 · Steered** | [`steering`](modules/steering.md), and [`tack`](modules/tack.md) with `control` through the broker: OpenCode first, because its in-process plugin can fail closed and rewrite tool input; then Pi, Claude Code and Codex | A rule such as "ask before `git push`" stops the push until it is answered, in every agent. With barn down, the push stays blocked |
+| **1 · Contained** | [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md), [`sandbox`](modules/sandbox.md) and [`broker`](modules/broker.md), in barn's B1 and B2, with the workhorse stall's status command in B9 | OpenCode completes a task with a real model under a profile. The model key reaches the provider through the broker and never appears in the agent's files or environment. A request outside the grant is denied and logged. Escape and egress suites pass |
+| **2 · Asked** | [`approvals`](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) and [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md) on the Unix socket, live narrowing, widening by approval, restart and resume for file changes (B9) | A request to a host outside the grant appears in the queue. Answering it from the CLI as "once" or "add to the grant" takes effect; an unanswered one is denied at its timeout. A file-grant change restarts and resumes the session |
+| **3 · Steered** | [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md), and [`tack`](modules/tack.md) with `control` through the broker: OpenCode first, because its in-process plugin can fail closed and rewrite tool input; then Pi, Claude Code and Codex | A rule such as "ask before `git push`" stops the push until it is answered, in every agent. With barn down, the push stays blocked |
 | **4 · Tools** | [`gateway`](modules/gateway.md) in barn's B3, and local MCP servers in their own sandboxes | An agent sees and calls only the tools its grant lists. Each server's network traffic goes through the broker |
 | **5 · Reachable** | Layer 2: the link between devices and durable sessions, built from the evidence in [`wrkhse/daemon-v0`](https://github.com/wrkhse/daemon-v0) | An approval is answered from a phone, and an agent session on the homelab survives a restart of the daemon. No plan yet |
 | **6 · Own harness** | Layer 3: the first harness from [HARNESS.md](HARNESS.md) | Not planned until milestone 5 is done |

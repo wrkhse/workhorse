@@ -14,10 +14,9 @@ holds every listener a client connects to, and owns what a stall must not do for
 itself: the sandbox, the only network exit, secrets, budgets, webhooks, MCP
 servers and upgrades.
 
-The contracts, [`grant`](modules/grant.md), [`steering`](modules/steering.md),
-[`approvals`](modules/approvals.md) and [`control`](modules/control.md), live in
-this repository. The enforcers, [`sandbox`](modules/sandbox.md),
-[`broker`](modules/broker.md) and [`gateway`](modules/gateway.md), live in barn.
+The contracts, [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md), [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md),
+[`approvals`](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) and [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md), live in wrkhse/barn. The enforcers, [`sandbox`](modules/sandbox.md),
+[`broker`](modules/broker.md) and [`gateway`](modules/gateway.md), live there too.
 A stall names a secret and never reads it, opens no socket barn does not hold, and
 reaches the network only through barn's broker.
 
@@ -100,10 +99,10 @@ flowchart TB
 
 | Module | Code | Status |
 | --- | --- | --- |
-| [`grant`](modules/grant.md) | the `grant` crate in wrkhse/workhorse | designed; barn's enforcers use it from B1 |
-| [`steering`](modules/steering.md) | the `steering` crate in wrkhse/workhorse | designed; the workhorse stall evaluates rules at B9 |
-| [`approvals`](modules/approvals.md) | the `approvals` crate in wrkhse/workhorse | designed; the queue lives in the workhorse stall at B9 |
-| [`control`](modules/control.md) | the `control` crate in wrkhse/workhorse | designed; the workhorse stall serves it at B9 |
+| [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md) | the `grant` crate in wrkhse/barn | designed; barn's enforcers use it from B1 |
+| [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md) | the `steering` crate in wrkhse/barn | designed; the workhorse stall evaluates rules at B9 |
+| [`approvals`](https://github.com/wrkhse/barn/blob/main/docs/approvals.md) | the `approvals` crate in wrkhse/barn | designed; the queue lives in the workhorse stall at B9 |
+| [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md) | the `control` crate in wrkhse/barn | designed; the workhorse stall serves it at B9 |
 | [`sandbox`](modules/sandbox.md) | `barn-exec` in wrkhse/barn | B1 on macOS, B6 on Linux |
 | [`broker`](modules/broker.md) | `crates/barn` in wrkhse/barn | B2 |
 | [`gateway`](modules/gateway.md) | `crates/barn` in wrkhse/barn | B3 |
