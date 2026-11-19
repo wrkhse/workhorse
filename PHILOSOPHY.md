@@ -9,12 +9,46 @@ No matter what Boris Cherny says, coding is **not solved**.
 
 So how do we leverage the power of agents without giving in to the issues?
 
-## A small core, and everything connects to it
+## How I build
 
-I want each project to have one small core that does one job and keeps its
-state and time. Extensions load at run time, and connections are how people,
-programs and agents reach it. In sourcefed, a plugin extends the daemon,
-while the CLI connects to it.
+Four principles run through every project here.
+
+**Think top-down, build bottom-up.**
+
+I design from what a project is for down to its concrete API, and I do it in
+issues. One master issue holds the shape. Each sub-issue goes deep on one
+problem and carries a code outline, so the direction gets judged before any
+code exists. Building goes the other way: one sub-issue per pull request, the
+smallest working piece first, and every piece grows from things that already
+work.
+
+> Prior art: Niklaus Wirth, "Program Development by Stepwise Refinement"
+> (CACM, 1971); Gall's law (John Gall, _Systemantics_): "A complex system that
+> works is invariably found to have evolved from a simple system that worked.
+> A complex system designed from scratch never works and cannot be patched up
+> to make it work."
+
+**Never trust, always verify.**
+
+Nothing is done just because someone says it is, me or an agent. Data gets
+checked once, where it enters, by a schema, and from then on it is a type the
+code can rely on. What matters gets proven: property tests, proofs where they
+fit, mutation testing. atelier's gates are the model: every check runs in a
+contained environment, and nothing lands until they all pass. A feature is
+done when a recording shows it working end to end. Every pull request gets an
+independent review and CI before it merges.
+
+> Prior art: Alexis King, "Parse, don't validate" (2019); zero trust's "never
+> trust, always verify".
+
+**Suckless.**
+
+Every project has an indivisible core: the one thing it does, the part you
+can't remove without the project stopping being itself, and the part that can
+be extended without end. I strip the core until nothing more can go.
+Everything else is built outward and plugs into it. Extensions load at run
+time, and connections are how people, programs and agents reach it. In
+sourcefed, a plugin extends the daemon, while the CLI connects to it.
 
 ```mermaid
 flowchart TB
@@ -37,6 +71,31 @@ not built yet:
 | Chauffeur | the engine: sense, classify, act | rules, rulebooks, judges | adapters, CLI, its sourcefed plugin |
 | barn | the supervisor and enforcers | stalls | listeners clients connect to |
 | atelier | the step machine (rungs) | steps, roles, plugins | labels, the sourcefed trigger |
+
+> Prior art: the suckless.org philosophy, "simplicity, clarity and frugality"
+> and "Designing simple and elegant software is far more difficult than
+> letting ad-hoc or over-ambitious features obscure the code over time.";
+> Jochen Liedtke's minimality principle ("On µ-Kernel Construction", SOSP
+> 1995): "A concept is tolerated inside the microkernel only if moving it
+> outside the kernel, i.e. permitting competing implementations, would
+> prevent the implementation of the system's required functionality.";
+> Bertrand Meyer's open–closed principle: open for extension, closed for
+> modification.
+
+**Build atomic.**
+
+Suckless is about what goes in the core; this is about how every piece is
+cut. Each piece does one job and owns a hard boundary (a crate, a module, a
+package), decoupled from the rest, so it can be understood, replaced and
+tested on its own. Hard boundaries make a project easier for a person to
+reason about, and far easier for an agent, which only sees a small part at a
+time. The reasoning is in [Code separation](#design-a-framework) below.
+
+> Prior art: Doug McIlroy's Unix philosophy (Bell System Technical Journal,
+> 1978): "Write programs that do one thing and do it well. Write programs to
+> work together."; David Parnas, "On the Criteria To Be Used in Decomposing
+> Systems into Modules" (CACM, 1972); the single-responsibility principle
+> (Robert C. Martin, _Clean Code_).
 
 ## Design a framework
 
