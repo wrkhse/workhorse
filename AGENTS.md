@@ -5,6 +5,7 @@
 - **Code:** Before writing, modifying, refactoring, reviewing, or debugging code, load and apply the global `code-discipline` skill and its active language reference.
 - **Architecture:** Before changing protocols, capability boundaries, sandboxing, extensibility, package or crate boundaries, or product responsibilities, read `OVERVIEW.md` and `ARCHITECTURE.md`.
 - **Design:** Before introducing or reshaping an abstraction, read `PHILOSOPHY.md`.
+- **READMEs:** Before writing or changing a repository README, read `docs/repository-standards.md`.
 
 Treat files under `spike/` and `evidence/`, and the archived `wrkhse/daemon-v0`, `wrkhse/workhorse-legacy` and `wrkhse/fleet-v0` repositories, as evidence, not production architecture. A successful experiment proves feasibility; it does not define the shipping design.
 
