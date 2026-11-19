@@ -138,6 +138,102 @@ triage uses it on today's Node daemon, sourcefed's Rust stall reaches Chauffeur
 through a socket grant, and the client lands with chauffeur#23's prerelease,
 `rc.5`.
 
+## How the projects fit together
+
+Three projects carry one piece each. sourcefed watches GitHub, Jira, Yab, feeds and
+schedules and delivers what changed. Chauffeur judges events and actions. atelier
+turns a work item into a pull request. barn (planned) holds their daemons as stalls.
+This section marks what works today and what the approved migration builds;
+[barn#1](https://github.com/wrkhse/barn/issues/1) carries the migration.
+
+### Today: a label becomes a pull request
+
+A `github-issues` monitor in sourcefed watches for the label `atelier:build` on an
+atelier issue. The event reaches atelier's sourcefed trigger, which starts a pipeline
+run. sourcefed delivers CI results and reviews to the builder's agent; Chauffeur,
+when it answers, triages each event at sourcefed's sink. The gates and optional
+stages come from atelier's project plugins.
+
+```mermaid
+flowchart LR
+    L["Issue labelled<br/>atelier:build"] --> M["sourcefed<br/>github-issues monitor"]
+    M -->|"item.matched"| T["atelier<br/>sourcefed trigger"]
+    T -->|"run"| P["pipeline:<br/>worktree, builder"]
+    P -->|"CI and reviews"| G["gates and stages"]
+    G -->|"pass"| R["pull request<br/>ready for the owner"]
+```
+
+sourcefed's monitor sends `item.matched` to the target `program:atelier` over its
+event stream; the trigger saves the run before acknowledging, so an unacknowledged
+event arrives again after a crash. The trigger is planned in
+[atelier#42](https://github.com/wrkhse/atelier/issues/42), slice 4. The pipeline is
+from [atelier#43](https://github.com/wrkhse/atelier/issues/43): each step says what
+it waits for, steps whose needs hold start together, and rungs decides which steps
+start, which are skipped and when the run is over. The builder opens a draft pull
+request from its worktree and session.
+
+sourcefed then watches the pull request: a failed check or a review comment becomes
+another event on the same stream, delivered into the builder's resident agent
+session. At sourcefed's sink, Chauffeur decides `withhold` or `deliver` for each
+event. A missing daemon, a v1 daemon, an error, or a three-second deadline delivers
+every event, so delivery never depends on Chauffeur. When the gates pass and every
+stage settles, the builder marks the pull request ready for the owner.
+
+### Today: scheduled work
+
+sourcefed's `schedule` and `timer` monitors fire an event; atelier's trigger maps a
+firing to a pipeline. The nightly security audit opens a pull request when it finds
+an advisory; a firing during a working run is skipped and shown in `atelier status`.
+
+```mermaid
+flowchart LR
+    S["schedule or timer<br/>fires"] --> E["sourcefed event<br/>schedule.fired"]
+    E --> T["atelier maps it to<br/>a pipeline"]
+    T --> A["nightly security audit<br/>opens a pull request"]
+```
+
+### Each project stands alone
+
+sourcefed works without Chauffeur: the sink delivers every event when no judgment
+arrives. Chauffeur is a judgment engine on its own, callable through
+`chauffeur navigate` on its socket. atelier depends on both: sourcefed's events start
+its runs and bring back CI results, and Chauffeur's sink triage filters those events.
+tack and rungs are internal libraries with no daemon: tack is the one-plugin bridge
+Chauffeur builds its harness adapters on, and rungs is the step machine in atelier's
+pipelines and Chauffeur's strategies. barn, planned, is the enforcement layer that
+holds every stall's sockets, sandbox, broker and gateway, described under
+[Planned: one daemon with stalls](#planned-one-daemon-with-stalls).
+
+| owns | without the others |
+| --- | --- |
+| [sourcefed](https://github.com/wrkhse/sourcefed) — monitors, dedup, delivery | delivers every event when Chauffeur does not answer |
+| [Chauffeur](https://github.com/wrkhse/chauffeur) — judgments, rules, plugins | callers use `chauffeur navigate` with or without a harness |
+| [atelier](https://github.com/wrkhse/atelier) — pipelines, runs, worktrees, builder sessions | needs sourcefed's events to trigger and to report CI |
+| [tack](https://github.com/wrkhse/tack) and [rungs](https://github.com/wrkhse/rungs) — plugin bridge, step machine | used as libraries; neither runs a daemon |
+
+### Planned: one daemon with stalls
+
+barn#1's migration moves the stand-alone daemons into stalls: sourcefed's S0 to S8,
+Chauffeur's B8, the workhorse stall at B9 and atelier's B10. A stall holds only its
+own handlers, jobs and events; barn holds every listener, the sandbox, the broker,
+the gateway and the secrets. Clients keep their addresses and bytes: sourcefed's HTTP
+and SSE protocol and its records do not change, and Chauffeur's socket protocol does
+not change.
+
+```mermaid
+flowchart TB
+    B["barn<br/>listeners, sandbox,<br/>broker, gateway"] --> SF["sourcefed stall<br/>S0 to S8"]
+    B --> CH["Chauffeur stall<br/>B8"]
+    B --> W["workhorse stall<br/>B9"]
+    B --> A["atelier stall<br/>B10"]
+```
+
+Workhorse's contracts stay in this repository; barn's enforcers implement them.
+
+**Owner question, open.** A standalone mode where barn is not installed is an idea,
+not in the approved plan. The plan has `brew install sourcefed` pulling in barn at
+cutover. Whether to keep a barn-free mode needs the owner's decision.
+
 ## What ships where
 
 ```mermaid

@@ -4,6 +4,8 @@
 designed, and nothing in this repository is built. barn builds the enforcers and
 the supervisor, and each project's stall follows. [ARCHITECTURE.md](ARCHITECTURE.md)
 shows the parts and where each one's code lives.
+See [How the projects fit together](ARCHITECTURE.md#how-the-projects-fit-together)
+for the flow from a label to a pull request.
 
 ## What Workhorse is
 
