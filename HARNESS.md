@@ -97,4 +97,4 @@ extension.
 
 Deterministic rules that fire when something in the context runs, as an MCP
 extension. The rules and their verdicts are layer 1's
-[`steering`](modules/steering.md); a harness applies them.
+[`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md); a harness applies them.

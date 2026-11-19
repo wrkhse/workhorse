@@ -4,7 +4,7 @@
 progress. **Code:** [`wrkhse/tack`](https://github.com/wrkhse/tack). **Plan:**
 [tack#1](https://github.com/wrkhse/tack/issues/1).
 
-How existing agents reach layer 1. A plugin is written once and runs in OpenCode, Pi, Claude Code and Codex. For Workhorse, it forwards each agent's hook events to [`steering`](steering.md) over [`control`](control.md) and applies the verdicts. It is also useful without Workhorse, as a general plugin SDK for coding agents.
+How existing agents reach layer 1. A plugin is written once and runs in OpenCode, Pi, Claude Code and Codex. For Workhorse, it forwards each agent's hook events to [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md) over [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md) and applies the verdicts. It is also useful without Workhorse, as a general plugin SDK for coding agents.
 
 ## Owns
 
@@ -14,12 +14,12 @@ How existing agents reach layer 1. A plugin is written once and runs in OpenCode
 
 ## Does not own
 
-- Deciding a verdict: that belongs to [`steering`](steering.md), evaluated in the
+- Deciding a verdict: that belongs to [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md), evaluated in the
   workhorse stall.
 
 ## Depends on
 
-[`control`](control.md), for its wire format only. It never links the Rust crates.
+[`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md), for its wire format only. It never links the Rust crates.
 
 ## Decisions
 

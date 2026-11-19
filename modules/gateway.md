@@ -12,13 +12,13 @@ The one door to MCP servers. It shows an agent only the tools its grant lists an
 
 ## Does not own
 
-- Which tools are allowed: that belongs to [`grant`](grant.md).
-- Rules about a call's arguments: those belong to [`steering`](steering.md).
+- Which tools are allowed: that belongs to [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md).
+- Rules about a call's arguments: those belong to [`steering`](https://github.com/wrkhse/barn/blob/main/docs/steering.md).
 - The servers' own network traffic: that goes through [`broker`](broker.md).
 
 ## Depends on
 
-[`grant`](grant.md). Native. Speaks MCP, an existing standard, so it invents no protocol.
+[`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md). Native. Speaks MCP, an existing standard, so it invents no protocol.
 
 ## Decisions
 

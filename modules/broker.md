@@ -13,13 +13,13 @@ The one network exit for every sandboxed agent. It checks each request against t
 
 ## Does not own
 
-- Which hosts and secrets are allowed: that belongs to [`grant`](grant.md).
+- Which hosts and secrets are allowed: that belongs to [`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md).
 - MCP tool calls: those belong to [`gateway`](gateway.md).
 - Keeping the agent from bypassing it: that belongs to [`sandbox`](sandbox.md).
 
 ## Depends on
 
-[`grant`](grant.md). Native.
+[`grant`](https://github.com/wrkhse/barn/blob/main/docs/grant.md). Native.
 
 ## Decisions
 
@@ -29,7 +29,7 @@ The one network exit for every sandboxed agent. It checks each request against t
 - **Never follow a redirect.** Return it to the agent; the follow-up request is checked against the grant like any other.
 - **Runs in barn** with the gateway, as a separate crate in `crates/barn`
   (2026-11-17).
-- **Carries `control` from inside the sandbox** on one reserved path, `/_workhorse/control`, which is never forwarded (2026-11-02). See [`control`](control.md).
+- **Carries `control` from inside the sandbox** on one reserved path, `/_workhorse/control`, which is never forwarded (2026-11-02). See [`control`](https://github.com/wrkhse/barn/blob/main/docs/control.md).
 - **Secrets live in one encrypted file** in the user's config, in the [age](https://age-encryption.org/) format (2026-11-02). The file's key is kept in the macOS Keychain or the Linux Secret Service where one exists, so barn starts silently when a client asks. On a server without a keyring, barn asks for a passphrase once and keeps the key in memory until it exits. The `age` crate is a production dependency and needs approval when the broker is built.
 - **Budgets are per secret** (2026-11-17). One file,
   `~/.config/barn/budgets.toml`, sets them, and every stall that names that secret
