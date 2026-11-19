@@ -46,15 +46,7 @@ export const hub = {
       repo: `${owner}/workhorse`,
       branch: "main",
       summary: "Open protocols in three layers: trust, runtime and harness",
-      pages: [
-        "README.md",
-        "OVERVIEW.md",
-        "PHILOSOPHY.md",
-        "ARCHITECTURE.md",
-        "HARNESS.md",
-        "modules/*.md",
-        "docs/*.md",
-      ],
+      pages: ["README.md", "PHILOSOPHY.md", "RANT.md", "docs/*.md"],
       exclude: [],
     },
     {

@@ -1,8 +1,9 @@
 # Repository standards
 
 **Status:** in force for every repository in the `wrkhse` organization. This page
-is the canonical place for the README prose standard. atelier enforces the
-code-example part in its slice 12, "Code examples that stay true".
+is the canonical place for the README prose standard. Automation for the
+code-example part is planned in atelier's slice 12, "Code examples that stay
+true".
 
 A repository README answers one question: how does a person or an agent use
 this project? Implementation lives in the inner docs.
@@ -12,9 +13,9 @@ flowchart TB
     Pitch["Elevator pitch<br/>what it does for the reader"] --> Setup
     Setup["Install and first setup<br/>version pins, main host"] --> Example
     Example["One small example<br/>the main action"] --> Uses
-    Uses["Uses<br/>one short section per task"] --> Roadmap
-    Roadmap["Roadmap<br/>a checklist, where relevant"] --> Inner
-    Inner["Inner docs<br/>links only"]
+    Uses["Uses<br/>one short section per task"] --> Inner
+    Inner["Inner docs<br/>links only"] --> Roadmap
+    Roadmap["Roadmap<br/>unbuilt outcomes, if any"]
 ```
 
 ## What a README is for
@@ -22,6 +23,11 @@ flowchart TB
 A README is organized by the tasks a reader comes to do: install the project,
 run it, wire it into their agent, answer a request it raises. Internals, module
 maps and test harnesses belong to the docs the README links to.
+
+The README reads as a finished product ready for a user: it describes what
+someone can use, without presenting planned work as shipped. It has no slice
+labels, done or in-progress status, or status lines. Unbuilt work appears only
+in a short Roadmap checklist at the very bottom.
 
 Sections follow the repository's real uses. A library has a section for each
 thing it does; a daemon has one for each command a person runs. No section
@@ -33,8 +39,8 @@ exists because a template has a slot for it.
 | Install and first setup | Install, first run and the main host, with pins |
 | Example                 | One small illustration of the main action       |
 | Uses                    | One short section for each task                 |
-| Roadmap                 | A checklist of what is happening                |
 | Inner docs              | Links to the full spec                          |
+| Roadmap                 | An optional checklist of unbuilt outcomes      |
 
 ## Prose
 
@@ -86,26 +92,24 @@ same version: `"plugins": ["tidepool@2.1.0"]`.
 tidepool build notes/   # writes site/, one page per note
 ```
 
-## Roadmap
-
-- [x] Search
-- [ ] Themes
-
 ## More
 
 [Architecture](docs/architecture.md) · [Plugin API](docs/plugins.md)
-````
 
 ## Roadmap
 
-A project that is still moving ends its uses with a short checklist of what is
-happening, one line for each item: `- [x]` for done and `- [ ]` for open. A
-finished project has none.
+- [ ] Themes
+````
 
 ## Inner docs
 
-The README ends with links to the inner docs for a reader who wants the full
-spec. It does not repeat their content.
+The README links to the inner docs for a reader who wants the full spec. It
+does not repeat their content.
+
+## Roadmap
+
+When work is unbuilt, the README ends with a short checklist of unbuilt
+outcomes, one unchecked `- [ ]` item per outcome. A finished project has none.
 
 ## Code examples stay true
 
@@ -129,7 +133,7 @@ flowchart LR
 
 ## Enforcement
 
-| Part                         | Held by                  |
-| ---------------------------- | ------------------------ |
-| README prose, this page      | Review against this page |
-| Code examples that stay true | atelier, slice 12        |
+| Part                         | Held by                     |
+| ---------------------------- | --------------------------- |
+| README prose, this page      | Review against this page    |
+| Code examples that stay true | atelier, slice 12 (planned) |

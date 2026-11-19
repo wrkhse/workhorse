@@ -1,6 +1,10 @@
 # Spike plan: restart and resume, and steering events
 
-**Status:** plan, not run. It answers two factual open questions in [`OVERVIEW.md`](../../OVERVIEW.md) for OpenCode, Pi, Claude Code and Codex. Results go to `evidence/agent-resume-and-events.md`.
+**Status:** plan, not run. It answers two factual open questions for OpenCode,
+Pi, Claude Code and Codex:
+[restart and resume](https://github.com/wrkhse/barn/issues/13) and
+[steering events](https://github.com/wrkhse/tack/issues/25). Results go to
+`evidence/agent-resume-and-events.md`.
 
 | Question | Why it matters |
 |---|---|
@@ -65,7 +69,7 @@ An agent passes B when every event steering needs fires with enough data to deci
 |---|---|
 | A table per agent for tests A and B, versions, raw captures and the commands used | `evidence/agent-resume-and-events.md` and `spike/resume-and-events/` |
 | Corrected matrix cells | `spike/unagent/MATRIX.md` on the `tack` branch |
-| Consequences | `OVERVIEW.md`: which agents support restart and resume, how each fails closed, and which events steering may rely on |
+| Consequences | [barn stall/CLI](https://github.com/wrkhse/barn/issues/13): which agents support restart and resume; [tack bridge](https://github.com/wrkhse/tack/issues/25): how each fails closed and which events steering may rely on |
 
 ## Order
 
@@ -73,7 +77,9 @@ An agent passes B when every event steering needs fires with enough data to deci
 2. Recording hook or plugin for each agent.
 3. Test B on macOS, then on Linux.
 4. Test A on macOS, then on Linux.
-5. Write the results; update the matrix and `OVERVIEW.md`.
+5. Write the results; update the matrix,
+   [barn stall/CLI](https://github.com/wrkhse/barn/issues/13) and
+   [tack bridge](https://github.com/wrkhse/tack/issues/25).
 
 The agents are tools under test, not dependencies. Any new package in the spike needs approval first.
 

@@ -3,7 +3,9 @@
 ## Sources
 
 - **Code:** Before writing, modifying, refactoring, reviewing, or debugging code, load and apply the global `code-discipline` skill and its active language reference.
-- **Architecture:** Before changing protocols, capability boundaries, sandboxing, extensibility, package or crate boundaries, or product responsibilities, read `OVERVIEW.md` and `ARCHITECTURE.md`.
+- **Architecture:** Before changing protocols, capability boundaries, sandboxing,
+  extensibility, package or crate boundaries, or product responsibilities, read
+  `site/src/how-it-fits.md` and each affected project's design (plans are in issues).
 - **Design:** Before introducing or reshaping an abstraction, read `PHILOSOPHY.md`.
 - **READMEs:** Before writing or changing a repository README, read `docs/repository-standards.md`.
 

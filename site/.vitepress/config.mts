@@ -52,11 +52,15 @@ const hubSidebar: DefaultTheme.SidebarItem[] = [
   {
     text: "The hub",
     items: [
-      { text: "What's here and why", link: "/" },
-      { text: "Architecture", link: "/workhorse/ARCHITECTURE" },
-      { text: "How the projects connect", link: "/connections" },
+      { text: "Home", link: "/" },
+      { text: "Philosophy", link: "/workhorse/PHILOSOPHY" },
+      { text: "Rant", link: "/workhorse/RANT" },
+      { text: "How it fits", link: "/how-it-fits" },
       { text: "Roadmap", link: "/roadmap" },
-      { text: "The wrkhse organization", link: "/wrkhse" },
+      {
+        text: "Contributing",
+        items: [{ text: "Repository standards", link: "/workhorse/docs/repository-standards" }],
+      },
       deck,
     ],
   },
@@ -79,8 +83,7 @@ export default defineConfig({
   },
   themeConfig: {
     nav: [
-      { text: "Architecture", link: "/workhorse/ARCHITECTURE" },
-      { text: "Connections", link: "/connections" },
+      { text: "How it fits", link: "/how-it-fits" },
       { text: "Roadmap", link: "/roadmap" },
       { text: "Projects", items: hub.projects.map((project) => ({ text: project.name, link: `/${project.id}/` })) },
       deck,
