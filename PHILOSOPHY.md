@@ -9,6 +9,35 @@ No matter what Boris Cherny says, coding is **not solved**.
 
 So how do we leverage the power of agents without giving in to the issues?
 
+## A small core, and everything connects to it
+
+I want each project to have one small core that does one job and keeps its
+state and time. Extensions load at run time, and connections are how people,
+programs and agents reach it. In sourcefed, a plugin extends the daemon,
+while the CLI connects to it.
+
+```mermaid
+flowchart TB
+    subgraph Connect["Connections: CLI, client, MCP, agent tools"]
+        subgraph Extend["Extensions: sources, plugins, modules"]
+            subgraph Core["Core: one job, state and time"]
+                C["the core"]
+            end
+        end
+    end
+```
+
+This is how I think about each project's design, including pieces that are
+not built yet:
+
+| Project | Core | Extensions | Connections |
+| --- | --- | --- | --- |
+| sourcefed | the daemon: clock, state, queue | sources, plugins | client, CLI, MCP, agent tools |
+| tack | hooks, tools, session actions | modules: skills, wasm, daemon, transports, client, sdk | the four harness adapters |
+| Chauffeur | the engine: sense, classify, act | rules, rulebooks, judges | adapters, CLI, its sourcefed plugin |
+| barn | the supervisor and enforcers | stalls | listeners clients connect to |
+| atelier | the step machine (rungs) | steps, roles, plugins | labels, the sourcefed trigger |
+
 ## Design a framework
 
 As a framework author myself, I noticed a couple things from both building and how users use a framework.

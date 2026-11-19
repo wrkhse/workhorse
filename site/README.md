@@ -42,8 +42,11 @@ flowchart LR
   so changes in the projects' repositories reach the hub within a day.
 - **Links in pulled pages:** a relative link, or a GitHub link under the
   project's owner or a former one, to a page the hub pulled stays on the
-  site; a link to anything else goes to GitHub at the configured branch. A missing image is read from GitHub, so a project's
-  mistake never fails the hub's build.
+  site; a link to anything else goes to GitHub at the configured branch. A
+  missing image is read from GitHub, so a project's mistake never fails the
+  hub's build. `formerOwners` in [`hub.config.ts`](../hub.config.ts) names
+  former owners whose links can be rewritten; GitHub redirects those that
+  stay external.
 - **Diagrams** use Mermaid's `base` theme, classic look and dagre layout, in
   the site's colours, light or dark. Each fits its column, never below 75% of
   its natural size; a wider one scrolls sideways.

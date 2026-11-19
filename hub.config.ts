@@ -50,6 +50,7 @@ export const hub = {
         "README.md",
         "OVERVIEW.md",
         "PHILOSOPHY.md",
+        "RANT.md",
         "ARCHITECTURE.md",
         "HARNESS.md",
         "modules/*.md",
