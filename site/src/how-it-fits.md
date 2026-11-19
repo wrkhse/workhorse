@@ -69,8 +69,12 @@ request and response.
 ## Boundaries and code
 
 atelier runs application work, sourcefed delivers events, and Chauffeur
-judges them. [barn](https://github.com/wrkhse/barn/tree/main/docs) holds the
-trust specifications.
+judges them. barn holds design specs for
+[grant](https://github.com/wrkhse/barn/issues/14),
+[steering](https://github.com/wrkhse/barn/issues/15),
+[approvals](https://github.com/wrkhse/barn/issues/16), and
+[control](https://github.com/wrkhse/barn/issues/17).
+These are design specs, not runtime promises.
 
 - **atelier:** [core and pipeline](https://github.com/wrkhse/atelier/tree/main/crates/core),
   [worktrees](https://github.com/wrkhse/atelier/tree/main/crates/git), and
@@ -89,9 +93,9 @@ trust specifications.
 - **barn:** the [CLI crate](https://github.com/wrkhse/barn/tree/main/crates/barn)
   holds the command-line surface.
 
-Design issues: [barn#1](https://github.com/wrkhse/barn/issues/1),
+Master issues: [barn#1](https://github.com/wrkhse/barn/issues/1),
 [tack#1](https://github.com/wrkhse/tack/issues/1),
-[tack#25](https://github.com/wrkhse/tack/issues/25) (bridge RFC),
+[sourcefed#3](https://github.com/wrkhse/sourcefed/issues/3),
+[atelier#1](https://github.com/wrkhse/atelier/issues/1),
 [o11y#1](https://github.com/wrkhse/o11y/issues/1),
-[atelier#42](https://github.com/wrkhse/atelier/issues/42) (open),
-[sourcefed#31](https://github.com/wrkhse/sourcefed/issues/31).
+[Chauffeur v2#43](https://github.com/wrkhse/chauffeur/issues/43).
