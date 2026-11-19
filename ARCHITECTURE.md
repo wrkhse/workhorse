@@ -80,8 +80,8 @@ secret: the broker adds it after the request leaves the stall.
 
 ## Where the code lives
 
-The contracts depend on each other and on nothing else. barn depends on them,
-pinned by tag, and never changes them.
+The layer-1 contracts live in barn with the enforcers they drive. Workhorse holds
+conformance and the workhorse stall's composition.
 
 ```mermaid
 flowchart TB
@@ -119,12 +119,12 @@ per source type, and the engine itself is being chosen.
 
 ```mermaid
 flowchart TB
-    W["wrkhse/workhorse<br/>contracts, conformance,<br/>the workhorse stall"]
+    W["wrkhse/workhorse<br/>conformance, the workhorse stall"]
     B["wrkhse/barn<br/>supervisor, enforcers,<br/>stall SDKs, plugin host"]
     P["each project's stall<br/>sourcefed, Chauffeur, atelier"]
     T["wrkhse/tack<br/>plugin API, harness adapters"]
-    O["wrkhse/o11y<br/>proposed, paused"]
-    B -->|"depends on the contracts"| W
+    O["wrkhse/o11y<br/>approved; O0 framing in progress"]
+    W -->|"uses the contracts and enforcers in barn"| B
     P -->|"barn-stall, or<br/>@wrkhse/barn-stall"| B
     T -->|"a plugin per harness"| P
     O -.-> W
@@ -227,7 +227,9 @@ flowchart TB
     B --> A["atelier stall<br/>B10"]
 ```
 
-Workhorse's contracts stay in this repository; barn's enforcers implement them.
+The layer-1 contracts and their crates live in
+[wrkhse/barn](https://github.com/wrkhse/barn); workhorse keeps the conformance
+suites and the workhorse stall's composition.
 
 **Owner question, open.** A standalone mode where barn is not installed is an idea,
 not in the approved plan. The plan has `brew install sourcefed` pulling in barn at
@@ -285,7 +287,7 @@ flowchart TB
 | What runs sandboxed | Every stall, every MCP server barn starts, and every agent process, each in its own child process under its own grant |
 | Who holds a secret | barn alone: one age file, its key in the macOS Keychain or the Linux Secret Service. A stall names a secret; the broker adds it |
 | Who answers for an agent | A person, through the approvals queue in the workhorse stall, from the CLI or from a harness plugin |
-| Where the evidence is | barn's `guard.log` records requests, denials, budget deferrals and restarts; each stall writes its own log. [o11y](https://github.com/wrkhse/o11y/issues/1) would add one trace and hash-chained evidence, and is paused |
+| Where the evidence is | barn's `guard.log` records requests, denials, budget deferrals and restarts; each stall writes its own log. [o11y](https://github.com/wrkhse/o11y/issues/1) resumed 2026-11-19 and adds one trace and hash-chained evidence. O0 framing is independent; O1 waits on B1 and B2. The store stays in barn, on SQLite |
 
 ## The stall protocol
 
@@ -344,7 +346,7 @@ and [barn#7](https://github.com/wrkhse/barn/pull/7) builds them.
 | [tack#1](https://github.com/wrkhse/tack/issues/1) | T1 to T8 | T1 in progress |
 | [atelier#1](https://github.com/wrkhse/atelier/issues/1) | 0 to 2, then 3, and the stall at B10 | 0 to 2 implemented in #1; 3 in [#43](https://github.com/wrkhse/atelier/issues/43) |
 | [Workhorse's milestones](OVERVIEW.md#roadmap) | 1 to 6 | 1 and 2 arrive with B9; 3 and 4 follow with tack and the gateway; 5 and 6 have no plan |
-| [o11y#1](https://github.com/wrkhse/o11y/issues/1) | O0 to O7 | proposed, paused |
+| [o11y#1](https://github.com/wrkhse/o11y/issues/1) | O0 to O7 | approved; resumed 2026-11-19; O0 framing in progress |
 
 ## Order of work
 
@@ -364,7 +366,7 @@ Each row waits on what its last column names.
 | 10 | barn B9: the workhorse stall | S6 to S8 |
 | 11 | barn B10: the atelier stall | B9 |
 | in step | tack T1 to T8 | alongside; T1 unblocks Chauffeur's slice 8 |
-| in step | o11y, when the owner resumes it | paused. O0 is independent; O1 waits on B1 and B2, whose envelope accepts `_meta`; O2 and O3 wait on Chauffeur's stack and atelier's D and E; O4 waits on sourcefed's Rust stall |
+| in step | o11y O0 to O7 | alongside; O0 is independent; O1 waits on B1 and B2, whose envelope accepts `_meta`; O2 and O3 wait on Chauffeur's stack and atelier's D and E; O4 waits on sourcefed's Rust stall |
 
 ## Open questions
 
