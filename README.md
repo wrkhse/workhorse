@@ -8,6 +8,8 @@ will be, with each part's status, and [the barn plan](https://github.com/wrkhse/
 builds it. [OVERVIEW.md](OVERVIEW.md) says what the protocols are, and
 [PHILOSOPHY.md](PHILOSOPHY.md) holds the design principles.
 
+Every repository's README follows the [repository standards](docs/repository-standards.md).
+
 Projects live under the [`wrkhse`](https://github.com/wrkhse) GitHub organization.
 
 | Project | What it is |
