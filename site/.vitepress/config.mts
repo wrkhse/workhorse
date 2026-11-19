@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join, posix } from "node:path"
 import { defineConfig, type DefaultTheme } from "vitepress"
-import { github, hub, type Project } from "../../hub.config"
+import { github, groups, hub, type Project } from "../../hub.config"
 import { address, linker } from "./links"
 import { MANIFEST, SITE, SRC, type Pulled } from "./sources"
 
@@ -15,35 +15,26 @@ function title(page: string): string {
   return heading?.replaceAll("`", "") ?? posix.basename(page, ".md")
 }
 
-/**
- * Pages sit in groups by folder: the top one, or two under `docs/`, such as
- * `crates` or `docs/plans`. A folder's index is its group's own page.
- */
-function group(source: string): string {
-  const parts = posix.dirname(source).split("/")
-  return parts[0] === "docs" && parts.length > 1 ? parts.slice(0, 2).join("/") : (parts[0] ?? ".")
+/** Two pages of one group with one title, such as several crates' READMEs, say where they are. */
+function items(members: Pulled[]): DefaultTheme.SidebarItem[] {
+  const labelled = members.map((entry) => ({ entry, label: title(entry.page) }))
+  return labelled.map(({ entry, label }) => {
+    const shared = labelled.filter((other) => other.label === label).length > 1
+    return { text: shared ? `${label} · ${posix.dirname(entry.source)}` : label, link: address(entry.page) }
+  })
 }
 
+/**
+ * Every project's section shows the same groups in the same order, chosen in
+ * `hub.config.ts`. Code comes last and starts collapsed; an empty group is left out.
+ */
 function projectSidebar(project: Project): DefaultTheme.SidebarItem[] {
   const pages = pulled.filter((entry) => entry.project === project.id)
-  const item = (entry: Pulled) => ({ text: title(entry.page), link: address(entry.page) })
-  const top = pages.filter((entry) => group(entry.source) === ".")
-  const folders = [...new Set(pages.map((entry) => group(entry.source)))].filter((name) => name !== ".").toSorted()
-  return [
-    { text: project.name, items: top.toSorted((a) => (a.source === "README.md" ? -1 : 1)).map(item) },
-    ...folders.map((folder) => {
-      const index = pages.find((entry) => entry.source === `${folder}/README.md`)
-      const items = pages.filter((entry) => group(entry.source) === folder && entry !== index)
-      const labels = items.map((entry) => title(entry.page))
-      // Two pages with one title, such as several crates' READMEs, say where they are.
-      const named = items.map((entry, at) =>
-        labels.filter((label) => label === labels[at]).length > 1
-          ? { text: `${labels[at]} · ${posix.dirname(entry.source).slice(folder.length + 1) || folder}`, link: address(entry.page) }
-          : item(entry),
-      )
-      return { text: folder, collapsed: true, ...(index && { link: address(index.page) }), items: named }
-    }),
-  ]
+  return groups.flatMap(({ id, title: text }) => {
+    const members = pages.filter((entry) => entry.group === id)
+    if (members.length === 0) return []
+    return [{ text, items: items(members), ...(id === "code" && { collapsed: true }) }]
+  })
 }
 
 const deck = { text: "Deck", link: "/deck/", target: "_self" }

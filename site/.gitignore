@@ -6,3 +6,5 @@ node_modules/
 .cloudflare/
 # Pulled from each project's repository at build time; see scripts/pull.ts.
 src/*/
+# Written from GitHub releases and plan issues at build time; see scripts/roadmap.ts.
+src/roadmap.md

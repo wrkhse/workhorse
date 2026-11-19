@@ -39,6 +39,9 @@ jobs:
         working-directory: deck
       - run: bun run test
       - run: bun run build
+        env:
+          # The roadmap reads releases and plan issues from the GitHub API; a token lifts its rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Deploy
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && env.CLOUDFLARE_API_TOKEN != ''
         run: npx cf deploy --message "${GITHUB_SHA}"

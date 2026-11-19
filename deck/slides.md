@@ -868,51 +868,6 @@ atelier last. For development and CI, barn run <stall> runs one in the foregroun
 -->
 
 ---
-layout: two-cols
----
-
-# Workhorse
-
-Open protocols and open projects, for every coding harness you use.
-
-Each project works on its own, or with the others.
-
-Underneath: three layers of open protocols, trust first.
-
-::right::
-
-<div class="flex justify-center">
-
-```mermaid {scale: 0.85}
-flowchart TB
-    App["atelier<br/>an application"] --> H
-    H["3 · Harness<br/>Chauffeur"] --> R
-    R["2 · Runtime<br/>sourcefed, the inbox"] --> T
-    T["1 · Trust<br/>the contracts here,<br/>barn that enforces them"]
-```
-
-</div>
-
-<!--
-That's Workhorse: open protocols and open projects that apply to every coding harness
-you own. Each can help you on its own, or they work together.
--->
-
----
-
-# What's next
-
-- **barn**: the supervisor, then the enforcers: the one daemon every project runs on
-- **sourcefed**: its stall, the providers unchanged as plugins, and triage through
-  Chauffeur
-- **Chauffeur v2**: slices to 1.0, then its stall; adapters for Pi, Claude Code and
-  Codex
-- **atelier**: pipelines of steps, runs started by sourcefed, then its stall last
-- **Workhorse**: milestones 1 and 2, the contracts and the workhorse stall, with barn
-- **wrkhse**: every project in one organization, and one trace across them when o11y
-  resumes
-
----
 layout: section
 ---
 
@@ -957,4 +912,7 @@ layout: center
 
 # Read more
 
-Every project's docs, in one place: <a href="/" target="_self">the Workhorse hub</a>
+Every project's docs, in one place: <a href="/" target="_self">the Workhorse hub</a>.
+
+- <a href="/how-it-fits" target="_self">How it fits</a>: how the projects connect
+- <a href="/roadmap" target="_self">The roadmap</a>: each project's latest release and plan
