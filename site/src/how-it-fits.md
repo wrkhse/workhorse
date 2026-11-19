@@ -8,17 +8,26 @@ runs work, sourcefed delivers events, and Chauffeur judges them when asked.
 flowchart LR
     Issue["GitHub issue<br/>atelier:build"] -->|"issue and label"| Atelier["atelier<br/>pipeline"]
     Atelier -->|"worktree and session"| Builder["OpenCode builder"]
-    Builder -->|"checks pass"| PR["pull request<br/>ready for review"]
+    Builder -->|"opens draft"| PR["GitHub pull request"]
+    Builder -->|"creates PR monitor"| Sourcefed["sourcefed"]
+    PR -->|"failed checks and reviews"| Sourcefed
+    Sourcefed -->|"messages"| Builder
+    PR -->|"polled CI state"| Atelier
+    Atelier -->|"checks passed"| Builder
+    Builder -->|"marks ready for review"| PR
 ```
 
 ## From label to pull request
 
 Add `atelier:build` to an issue in a watched GitHub project. atelier polls
-the issue, claims it and starts a pipeline. Its OpenCode builder works in its
-own worktree and opens a draft pull request. When the configured gates pass,
-the pull request can be marked ready for review. The pipeline's run machine
-uses [rungs](https://github.com/wrkhse/rungs) to decide which steps start,
-which are skipped and when the run ends.
+the issue, claims it and starts a pipeline. Its OpenCode builder works in
+its own worktree. In the released `v0.1.0-rc.8`, the
+[GitHub adapter's brief](https://github.com/wrkhse/atelier/blob/v0.1.0-rc.8/plugins/github/src/forge.rs#L144-L153)
+tells the builder to open a draft pull request and create a sourcefed PR
+monitor. Failed checks and reviews reach the builder as messages. atelier
+polls GitHub for CI state and tells the builder when checks pass; the builder
+marks the pull request ready for review. sourcefed feeds events back to the
+builder; it does not start this run.
 
 See [atelier's run machine](https://github.com/wrkhse/atelier/tree/main/crates/core/src/machine)
 and its [GitHub](https://github.com/wrkhse/atelier/tree/main/plugins/github)
@@ -35,16 +44,22 @@ its configured session target. This delivery does not require atelier.
 ```mermaid
 flowchart LR
     Sink["sourcefed sink"] -->|"event for triage"| Triage["Chauffeur v2 triage"]
-    Triage -->|"withhold event"| Withheld["Not queued"]
-    Triage -->|"no withholding verdict or unavailable"| Queue["Queue"]
+    Triage -->|"withhold event"| Withheld["Acknowledged<br/>not queued"]
+    Triage -->|"deliver: chauffeurTriaged true"| Queue["Queue"]
+    Triage -->|"unavailable: unmarked fallback"| Queue
     Queue -->|"eligible event"| Target["Configured target"]
 ```
 
 At its sink, sourcefed can ask Chauffeur v2 to triage an event through the
 shipped TypeScript `@fdcn/chauffeur/client` and `navigate`. A verdict can
-withhold the event before it reaches the queue. If no verdict is available,
-the event is queued without v2 triage, including when Chauffeur is absent
-or times out. OpenCode may still apply its v1 gate to unmarked events.
+withhold the event; the sink acknowledges it without queuing it. The
+[sink](https://github.com/wrkhse/sourcefed/blob/main/packages/daemon/src/utils/sink.ts#L14-L35)
+queues triaged, non-withheld events with `chauffeurTriaged: true`. If no
+verdict is available, including when Chauffeur is absent or times out,
+the event is queued unmarked. The
+[OpenCode bridge](https://github.com/wrkhse/sourcefed/blob/main/adapters/opencode/bridge.ts#L134-L146)
+skips its v1 gate only for marked events; unmarked events still pass through
+that gate when it is available.
 The [sourcefed triage reference](https://github.com/wrkhse/sourcefed/tree/main/packages/daemon/src/triage)
 describes the decisions and fallback. Chauffeur also exposes
 `chauffeur navigate` to callers; its
@@ -60,13 +75,16 @@ trust specifications.
 - **atelier:** [core and pipeline](https://github.com/wrkhse/atelier/tree/main/crates/core),
   [worktrees](https://github.com/wrkhse/atelier/tree/main/crates/git), and
   [plugins](https://github.com/wrkhse/atelier/tree/main/plugins).
+  Its run machine depends on rungs on
+  [`main`](https://github.com/wrkhse/atelier/blob/main/crates/core/Cargo.toml),
+  outside the `v0.1.0-rc.8` release.
 - **sourcefed:** [daemon](https://github.com/wrkhse/sourcefed/tree/main/packages/daemon)
   and [SDK](https://github.com/wrkhse/sourcefed/tree/main/packages/sdk).
 - **Chauffeur:** [core](https://github.com/wrkhse/chauffeur/tree/v2/crates/core)
   and [daemon](https://github.com/wrkhse/chauffeur/tree/v2/crates/daemon).
   Its core also depends on rungs.
 - **tack:** [OpenCode and Pi adapters](https://github.com/wrkhse/tack/tree/main/src/agents)
-  and [session support](https://github.com/wrkhse/tack/tree/main/src/session).
+  and [session support](https://github.com/wrkhse/tack/blob/main/src/session.ts).
 - **rungs:** the [step machine](https://github.com/wrkhse/rungs/tree/main).
 - **barn:** the [CLI crate](https://github.com/wrkhse/barn/tree/main/crates/barn)
   holds the command-line surface.

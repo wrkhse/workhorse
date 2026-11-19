@@ -4,9 +4,6 @@ Workhorse is a family of small projects for making agent work safer, visible
 and steerable. Each project does one job and leaves room for people and
 programs to build on it.
 
-Each project has a core that keeps state and time, extensions loaded at run
-time, and connections for people, programs and agents.
-
 ```mermaid
 flowchart TB
     subgraph Connect["Connections: CLI, client, MCP, agent tools"]
