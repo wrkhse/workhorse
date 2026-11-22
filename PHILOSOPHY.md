@@ -70,7 +70,7 @@ not built yet:
 | barn | a daemon engine for easy sandboxing and enforcement | stalls, one per tool's daemon (Luau) | tack, as its daemon module; `control` JSON-RPC; listeners; CLI |
 | sourcefed | a source event manager: takes in events from every source and feeds them on | Luau sources; plugins such as Chauffeur's triage hook | tack: agent tools, MCP, CLI, client |
 | Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | tack: harness adapters, CLI, `ask_chauffeur`; a sourcefed plugin |
-| atelier | a CI engine: best-practice CI for monorepos | gates per language, a builder agent, issue detection through sourcefed | tack: harness adapters, CLI; the `atelier:build` label; CI |
+| atelier | a CI engine: best-practice CI for monorepos | role plugins: gates per language, a builder agent, issue detection through sourcefed | tack: harness adapters, CLI; the `atelier:build` label; CI |
 
 tack is how every other project reaches agents: sourcefed, Chauffeur and
 atelier are each a tack plugin, so their connections are the ones tack builds.
@@ -85,6 +85,9 @@ flowchart TB
     B -->|"stall"| SF["sourcefed<br/>source event manager"]
     B -->|"stall"| CH["Chauffeur<br/>judgment engine"]
     B -->|"stall"| AT["atelier<br/>CI engine"]
+    T -.->|"plugin"| SF
+    T -.->|"plugin"| CH
+    T -.->|"plugin"| AT
     CH -->|"plugin"| SF
     SF -->|"issue detection"| AT
 ```
