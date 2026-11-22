@@ -54,7 +54,7 @@ sourcefed, a plugin extends the daemon, while the CLI connects to it.
 flowchart TB
     subgraph Connect["Connections: CLI, client, MCP, agent tools"]
         subgraph Extend["Extensions: sources, plugins, modules"]
-            subgraph Core["Core: one job, state and time"]
+            subgraph Core["Core: the one job"]
                 C["the core"]
             end
         end
@@ -66,11 +66,11 @@ not built yet:
 
 | Project | Core | Extensions | Connections |
 | --- | --- | --- | --- |
-| sourcefed | the daemon: clock, state, queue | sources (Luau), plugins | client, CLI, MCP, agent tools |
-| tack | hooks, tools, session actions | modules: skills, daemon, transports, client, sdk; third-party modules from git | the harness adapters (a generated wrapper for JS-hosted harnesses) |
-| Chauffeur | the engine: sense, classify, act | rules, rulebooks, judges; Luau facts and plugins | adapters, CLI, its sourcefed plugin |
-| barn | the supervisor and enforcers | stalls (Luau) | listeners clients connect to |
-| atelier | the step machine (rungs) | steps, roles, plugins | labels, the sourcefed trigger |
+| sourcefed | a source event manager: takes in events from every source and feeds them on | sources (Luau), plugins | agent tools, MCP, CLI, client |
+| tack | a universal agent adapter: one plugin, every harness | modules added through its compiler; third-party modules from git | the harness adapters (a generated wrapper for JS-hosted harnesses) |
+| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | adapters, CLI, its sourcefed plugin |
+| barn | a daemon engine for easy sandboxing and enforcement | stalls (Luau) | listeners clients connect to |
+| atelier | a CI engine: best-practice CI for monorepos | a builder agent, issue detection through sourcefed, roles, plugins | labels, the sourcefed trigger |
 
 > Prior art: the suckless.org philosophy, "simplicity, clarity and frugality"
 > and "Designing simple and elegant software is far more difficult than
