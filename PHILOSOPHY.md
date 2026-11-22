@@ -66,10 +66,10 @@ not built yet:
 
 | Project | Core | Extensions | Connections |
 | --- | --- | --- | --- |
-| sourcefed | the daemon: clock, state, queue | sources, plugins | client, CLI, MCP, agent tools |
-| tack | hooks, tools, session actions | modules: skills, wasm, daemon, transports, client, sdk | the four harness adapters |
-| Chauffeur | the engine: sense, classify, act | rules, rulebooks, judges | adapters, CLI, its sourcefed plugin |
-| barn | the supervisor and enforcers | stalls | listeners clients connect to |
+| sourcefed | the daemon: clock, state, queue | sources (Luau), plugins | client, CLI, MCP, agent tools |
+| tack | hooks, tools, session actions | modules: skills, daemon, transports, client, sdk; third-party modules from git | the harness adapters (a generated wrapper for JS-hosted harnesses) |
+| Chauffeur | the engine: sense, classify, act | rules, rulebooks, judges; Luau facts and plugins | adapters, CLI, its sourcefed plugin |
+| barn | the supervisor and enforcers | stalls (Luau) | listeners clients connect to |
 | atelier | the step machine (rungs) | steps, roles, plugins | labels, the sourcefed trigger |
 
 > Prior art: the suckless.org philosophy, "simplicity, clarity and frugality"
