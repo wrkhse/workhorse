@@ -66,11 +66,28 @@ not built yet:
 
 | Project | Core | Extensions | Connections |
 | --- | --- | --- | --- |
-| sourcefed | a source event manager: takes in events from every source and feeds them on | sources (Luau), plugins | agent tools, MCP, CLI, client |
-| tack | a universal agent adapter: one plugin, every harness | modules added through its compiler; third-party modules from git | the harness adapters (a generated wrapper for JS-hosted harnesses) |
-| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | adapters, CLI, its sourcefed plugin |
-| barn | a daemon engine for easy sandboxing and enforcement | stalls (Luau) | listeners clients connect to |
-| atelier | a CI engine: best-practice CI for monorepos | a builder agent, issue detection through sourcefed, roles, plugins | labels, the sourcefed trigger |
+| tack | a universal agent adapter: one plugin, every harness | modules its compiler builds in: barn, skills, transports, client, sdk; modules from git | harness adapters for OpenCode, Pi, Claude Code and Codex; MCP server; CLI |
+| barn | a daemon engine for easy sandboxing and enforcement | stalls, one per tool's daemon (Luau) | tack, as its daemon module; `control` JSON-RPC; listeners; CLI |
+| sourcefed | a source event manager: takes in events from every source and feeds them on | Luau sources; plugins such as Chauffeur's triage hook | tack: agent tools, MCP, CLI, client |
+| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | tack: harness adapters, CLI, `ask_chauffeur`; a sourcefed plugin |
+| atelier | a CI engine: best-practice CI for monorepos | gates per language, a builder agent, issue detection through sourcefed | tack: harness adapters, CLI; the `atelier:build` label; CI |
+
+tack is how every other project reaches agents: sourcefed, Chauffeur and
+atelier are each a tack plugin, so their connections are the ones tack builds.
+barn is the module inside tack that runs each tool's daemon as a sandboxed
+stall. Projects extend each other the same way they extend themselves:
+Chauffeur plugs into sourcefed, and sourcefed plugs into atelier.
+
+```mermaid
+flowchart TB
+    A["Agents<br/>OpenCode, Pi, Claude Code, Codex"] -->|"harness adapters"| T["tack<br/>universal agent adapter"]
+    T -->|"daemon module"| B["barn<br/>sandbox + enforcement"]
+    B -->|"stall"| SF["sourcefed<br/>source event manager"]
+    B -->|"stall"| CH["Chauffeur<br/>judgment engine"]
+    B -->|"stall"| AT["atelier<br/>CI engine"]
+    CH -->|"plugin"| SF
+    SF -->|"issue detection"| AT
+```
 
 > Prior art: the suckless.org philosophy, "simplicity, clarity and frugality"
 > and "Designing simple and elegant software is far more difficult than
