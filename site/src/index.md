@@ -11,7 +11,7 @@ Each project has a [small core](/workhorse/PHILOSOPHY).
 | [atelier](/atelier/) | A CI engine for monorepos. |
 | [sourcefed](/sourcefed/) | Deliver changes to agents and programs. |
 | [Chauffeur](/chauffeur/) | Steer agent decisions with rules and judges. |
-| [tack](/tack/) | Write plugins for OpenCode and Pi. |
+| [tack](/tack/) | Write OpenCode plugins (v0.1.0-rc.2). |
 | [barn](https://github.com/wrkhse/barn) | Run plugin code in sandboxed stalls. |
 
 - [How it fits](/how-it-fits)

@@ -1,10 +1,8 @@
 # How it fits
 
-Workhorse projects help a person turn an issue into a pull request and keep
-an agent informed as work changes. Each project has its own job: atelier is
-a CI engine for monorepos, sourcefed delivers events, and Chauffeur judges
-them when asked. The [design](/workhorse/PHILOSOPHY) describes how the
-projects fit together; this page describes what runs today.
+This page describes what runs today: sourcefed delivers events to agents and
+programs, and Chauffeur triages them when asked. The
+[design](/workhorse/PHILOSOPHY) describes how the projects fit together.
 
 ## Events and decisions
 
