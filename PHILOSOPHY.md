@@ -64,32 +64,55 @@ flowchart TB
 This is how I think about each project's design, including pieces that are
 not built yet:
 
-| Project | Core | Extensions | Connections |
-| --- | --- | --- | --- |
-| tack | a universal agent adapter: one plugin, every harness | modules its compiler builds in: barn, skills, transports, client, sdk; modules from git | harness adapters for OpenCode, Pi, Claude Code and Codex; MCP server; CLI |
-| barn | a daemon engine for easy sandboxing and enforcement | stalls, one per tool's daemon (Luau) | tack, as its daemon module; `control` JSON-RPC; listeners; CLI |
-| sourcefed | a source event manager: takes in events from every source and feeds them on | Luau sources; plugins such as Chauffeur's triage hook | tack: agent tools, MCP, CLI, client |
-| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | tack: harness adapters, CLI, `ask_chauffeur`; a sourcefed plugin |
-| atelier | a CI engine: best-practice CI for monorepos | role plugins: gates per language, a builder agent, issue detection through sourcefed | tack: harness adapters, CLI; the `atelier:build` label; CI |
+| Project | Core | Extensions | Connections | Status |
+| --- | --- | --- | --- | --- |
+| tack | a universal agent adapter: one plugin, every harness | modules its compiler builds in: barn, skills, transports, client, opt-in sdk; modules from git | harness adapters for OpenCode, Pi, Claude Code and Codex; MCP server; CLI | OpenCode works (v0.1.0-rc.2); Claude Code in progress |
+| barn | a sandbox and runtime-stall engine | stalls, one per tool, plus runtimes (Luau first; QuickJS or V8 later) | tack, chauffeur and sourcefed depend on it; `control` JSON-RPC; listeners; CLI | slice 1 in progress; runtime stalls planned |
+| sourcefed | a source event manager: takes in events from every source and feeds them on | Luau sources; plugins such as Chauffeur's triage hook | tack: agent tools, MCP, CLI, client | TypeScript version live; Rust core in progress |
+| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | tack: harness adapters, CLI, `ask_chauffeur`; sourcefed sdk hooks | Rust core in progress |
+| atelier | a CI engine for monorepos | presets: gates per language, metrics, agent review | moon and GitHub checks | presets in progress |
 
 tack is how every other project reaches agents: sourcefed, Chauffeur and
 atelier are each a tack plugin, so their connections are the ones tack builds.
-barn is the module inside tack that runs each tool's daemon as a sandboxed
-stall. Projects extend each other the same way they extend themselves:
-Chauffeur plugs into sourcefed, and sourcefed plugs into atelier.
+barn is the sandbox and runtime-stall engine that tack links as a library.
+tack, chauffeur and sourcefed depend on barn to run their Luau. Plugin code
+runs only in barn's runtime stalls: supervised, sandboxed processes that speak
+tack's framed NDJSON protocol. No runtime loads into tack's daemon. Projects
+extend each other the same way they extend themselves: Chauffeur plugs into
+sourcefed through tack's sdk hooks.
+
+Where things run:
 
 ```mermaid
-flowchart TB
-    A["Agents<br/>OpenCode, Pi, Claude Code, Codex"] -->|"harness adapters"| T["tack<br/>universal agent adapter"]
-    T -->|"daemon module"| B["barn<br/>sandbox + enforcement"]
-    B -->|"stall"| SF["sourcefed<br/>source event manager"]
-    B -->|"stall"| CH["Chauffeur<br/>judgment engine"]
-    B -->|"stall"| AT["atelier<br/>CI engine"]
-    T -.->|"plugin"| SF
-    T -.->|"plugin"| CH
-    T -.->|"plugin"| AT
-    CH -->|"plugin"| SF
-    SF -->|"issue detection"| AT
+flowchart LR
+    A["Agents<br/>OpenCode, Claude Code,<br/>Pi, Codex"] --> T["tack<br/>adapter + daemon"]
+    T --> B["barn<br/>sandbox + enforcement"]
+    B --> SFT["tool stall:<br/>sourcefed"]
+    B --> CHT["tool stall:<br/>Chauffeur"]
+    B --> RT["runtime stalls<br/>Luau: plugins, rules, filters"]
+```
+
+An event reaching an agent:
+
+```mermaid
+flowchart LR
+    SRC["Sources: GitHub, Jira,<br/>Slack, timers, feeds"] --> SF["sourcefed"]
+    SF --> EB["eventBefore<br/>tack sdk module"]
+    EB --> CH["Chauffeur triage<br/>in a Luau stall"]
+    CH --> R["deliver, drop<br/>or annotate"]
+    R --> T["tack"]
+    T --> AG["agent session"]
+```
+
+A pull request through atelier:
+
+```mermaid
+flowchart LR
+    PR["pull request"] --> AP["atelier presets<br/>moon ci in CI"]
+    AP --> CK["one check per gate,<br/>metrics, agent review"]
+    CK --> FB["findings via<br/>sourcefed"]
+    FB --> W["worker agent"]
+    W --> FIX["fix and push"]
 ```
 
 > Prior art: the suckless.org philosophy, "simplicity, clarity and frugality"

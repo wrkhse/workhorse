@@ -8,11 +8,11 @@ Each project has a [small core](/workhorse/PHILOSOPHY).
 
 | Project | What you use it for |
 | --- | --- |
-| [atelier](/atelier/) | Run labelled work from an issue to a pull request. |
+| [atelier](/atelier/) | A CI engine for monorepos. |
 | [sourcefed](/sourcefed/) | Deliver changes to agents and programs. |
 | [Chauffeur](/chauffeur/) | Steer agent decisions with rules and judges. |
 | [tack](/tack/) | Write plugins for OpenCode and Pi. |
-| [barn](https://github.com/wrkhse/barn) | Read the stall protocol. |
+| [barn](https://github.com/wrkhse/barn) | Run plugin code in sandboxed stalls. |
 
 - [How it fits](/how-it-fits)
 - [Roadmap](/roadmap)
