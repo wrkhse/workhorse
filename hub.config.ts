@@ -97,10 +97,9 @@ export const hub = {
       repo: `${owner}/atelier`,
       branch: "main",
       summary:
-        "A personal software factory: a labelled issue becomes a proven pull request",
+        "A CI engine for monorepos: gate presets on moon, one GitHub check per gate",
       overview: "README.md",
-      design: ["docs/plans/README.md", "docs/plans/slices/*.md"],
-      code: ["crates/**/README.md", "plugins/*/README.md"],
+      design: ["docs/plans/README.md"],
       plan: 1,
     },
     {

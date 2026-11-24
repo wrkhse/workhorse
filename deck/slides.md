@@ -47,7 +47,7 @@ flowchart LR
     end
     M -- "pulled out" --> SF["sourcefed<br/>any source, any agent"]
     S -- "pulled out" --> CH["Chauffeur<br/>judges and steers any agent"]
-    T -- "pulled out" --> AT["atelier<br/>a labelled issue becomes a proven PR"]
+    T -- "pulled out" --> AT["atelier<br/>gate presets on moon"]
 ```
 
 </div>
@@ -60,10 +60,10 @@ went idle. It worked, but every piece was locked inside that app and tied to its
 harness adapters; in practice only Pi was finished.
 
 So I pulled each piece out. The monitors became sourcefed, the steering became
-Chauffeur, and the issue-to-agent loop became atelier. Each one went much further than
-the original, and each one is harness-agnostic. sourcefed already runs in OpenCode,
-Pi, Claude Code and Codex. Chauffeur's recordings are in OpenCode, and its next
-version reaches the others through tack, which comes at the end.
+Chauffeur, and the gates became atelier, a CI engine for monorepos. Each went much
+further than the original, and each one is harness-agnostic. sourcefed already runs
+in OpenCode, Pi, Claude Code and Codex. Chauffeur's recordings are in OpenCode, and
+its next version reaches the others through tack, which comes at the end.
 -->
 
 ---
@@ -551,259 +551,135 @@ it so it's as deterministic as possible while still shipping fast? That's atelie
 -->
 
 ---
-layout: demo
----
 
 # atelier
 
-**A personal software factory: a labelled issue becomes a proven pull request.**
+**A CI engine for monorepos: gate presets on moon, one GitHub check per gate.**
 
-Label an issue `atelier:build`. Within a minute, a builder agent is working on it in
-its own worktree, from the base branch. It opens a draft PR and fixes what CI
-reports.
+A project inherits task files for its language. `moon ci` runs their gates and a
+reporter puts one check on each pull request for every gate it touched.
 
-The agent writes the code. Everything around it is atelier's: claiming the issue,
-branching, running the checks, and deciding when the work is done.
-
-::right::
-
-![A labelled issue is claimed: labels swapped, the builder's session and branch commented, its worktree on the issue's branch](./media/atelier/docs/media/slice-1.gif)
-
-An issue claimed: labels swapped, the builder's session and branch commented.
-
-<!--
-atelier is a personal software factory. Label an issue and a builder agent picks it
-up in its own worktree and opens a PR. The agent only writes the change; the factory
-around it is deterministic code.
--->
-
----
-
-# How a feature moves
+The Rust presets are in progress (#87). Metrics (#88) and agent review as a check
+(#89) follow.
 
 <div class="flex justify-center">
 
-```mermaid {scale: 0.48}
-sequenceDiagram
-    participant You
-    participant Atelier as atelier daemon
-    participant Builder as Builder agent
-    participant PR as Pull request and CI
-    participant Critic as Critic agent (planned)
-    You->>Atelier: label issue atelier:build
-    Atelier->>Builder: worktree and session
-    Builder->>PR: draft pull request
-    PR-->>Builder: failed check, via sourcefed
-    Builder->>PR: fix and push
-    PR-->>Atelier: every check passes
-    Atelier->>Critic: every check passed: review it
-    Critic->>PR: findings with evidence
-    Builder->>PR: fix and record
-    Atelier->>Builder: every check and stage passed
-    Builder->>PR: mark ready
-    PR-->>You: ready for review
+```mermaid {scale: 0.55}
+flowchart LR
+    Presets[".moon/tasks/*.yml"] --> Moon["moon ci"]
+    Moon --> Reporter["atelier reporter"]
+    Reporter --> Checks["one GitHub check per gate"]
 ```
 
 </div>
 
 <!--
-The whole loop. You label an issue; atelier gives a builder its own worktree and
-session. The builder opens a draft PR, and every failed check comes back to it through
-sourcefed until everything passes. Then a critic agent reviews it with evidence and
-the builder records the feature working; those two stages are planned. Only when every
-check and stage has passed does atelier tell the builder to mark it ready, and then
-it's yours.
+atelier is a CI engine for monorepos. Projects inherit moon task files, moon ci
+runs the gates, and a reporter turns each result into one GitHub check. The
+presets are plain task files, so another runner stays cheap. This is planned
+work: the Rust presets are in progress, with metrics and agent review to follow.
 -->
 
 ---
 
-# One issue, end to end
+# One gate, one check
 
-<div class="grid grid-cols-[3fr_2fr] gap-8">
-<div>
+<div class="flex justify-center">
 
-1. **You** write issue #16, "show each issue's pull request in `atelier status`",
-   with what you can do and when it's done, and label it `atelier:build`.
-2. **atelier** claims it: `atelier:working`, a branch, and a builder in its own
-   worktree.
-3. **The builder** opens draft PR #17. Each commit is fixed before it lands, and
-   each failed check comes back to it through sourcefed.
-4. **atelier** sees every check pass and tells the builder, which marks it ready.
-5. **You** review and merge.
-
-</div>
-<div>
-
-```text
-claimed             +0 min
-draft PR #17        +4 min
-ready, all green   +32 min
-merged by a person +34 min
+```mermaid {scale: 0.5}
+flowchart LR
+    Preset[".moon/tasks/rust.yml"] -- "inherits" --> Project["a monorepo"]
+    Project -- "moon ci" --> Results["one result per gate"]
+    Results -- "reporter" --> Check["one GitHub check per gate"]
+    Check -- "missing or failed" --> Fail["that gate fails"]
 ```
 
-<div class="text-sm opacity-80 mt-4">
+</div>
 
-PR #17: +132 −8 over two commits. Its body says what you can do, how it works,
-with a diagram, and its proofs, such as a test that runs the real binary against
-a stand-in GitHub.
-
-</div>
-</div>
-</div>
+A gate is a moon task: `fmt`, `clippy`, `test`, `Kani`, `miri`, `cargo-mutants`
+and `MSRV` for Rust. A missing result fails its gate.
 
 <!--
-A real one from atelier's own repository, which atelier builds. Issue 16 asked for
-the pull request number in atelier status, with a "You can" and a "Done when". The
-builder was claimed at 07:02, opened PR 17 at 07:06, was told every check passed and
-marked it ready at 07:34, and I merged it at 07:36. The PR body follows atelier's
-template: what you can do, how, a diagram, and the proofs.
+One gate's path. A project inherits the preset, moon ci produces one result per
+task, and the reporter makes one check from it. The preset stays independent of
+the reporter.
 -->
 
 ---
 
-# Gates are commands, listed once
+# What the Rust preset checks
 
-<div class="grid grid-cols-2 gap-8 gates">
-<div>
+| Gate      | Fails when                                            |
+| --------- | ----------------------------------------------------- |
+| fmt       | formatting drifts                                     |
+| clippy    | the compiler warns                                    |
+| test      | a test fails                                          |
+| Kani      | a proof no longer holds                               |
+| miri      | undefined behaviour appears                           |
+| mutants   | a change to a line is not caught by a test            |
+| MSRV      | the code needs a newer Rust than the declared minimum |
 
-```toml
-# .atelier/config.toml
-[commands.fmt]
-run = "cargo fmt --all -- --check"
-fix = "cargo fmt --all"
+Each gate runs in CI or a container, never on a developer's machine. The exact
+defaults and thresholds are open in the design (#85).
 
-[commands.clippy]
-run = "cargo clippy --workspace … -- -D warnings"
+<!--
+The gates in the Rust preset, one per moon task. They run in CI or a container;
+none runs on a Mac. The design leaves the exact defaults and thresholds open.
+-->
 
-[commands.mutants]
-run = "cargo mutants --in-diff target/mutants.diff …"
+---
+
+# Gates are presets, listed once
+
+```yaml
+# .moon/tasks/rust.yml
+tasks:
+  fmt:
+    command: cargo fmt --all -- --check
 ```
 
-- A gate's `fix` runs in a hook before each of the builder's commits, so the fix
-  lands in that commit.
-- Its `run` is one CI check, in its own locked-down container, for each part of
-  the repository the diff touches.
-
-</div>
-<div>
-
-```text
-commands/fmt          pass    0.2 s
-commands/clippy       pass    8.5 s
-commands/nextest      pass   56.3 s
-commands/doctest      pass    6.7 s
-commands/rustdoc      pass    8.0 s
-commands/deny         pass  124.1 s
-commands/shear        pass   51.6 s
-commands/msrv         pass   13.8 s
-commands/kani         pass  338.6 s
-commands/mutants      pass  211.7 s
-commands/prettier     pass    0.9 s
-commands/readmes      pass    1.1 s
-commands/actionlint   pass    8.4 s
-```
-
-<div class="text-sm opacity-80">
-One PR's checks, each timed inside its container. Ruff didn't run: the PR
-touched nothing in <code>scripts/</code>.
-</div>
-</div>
-</div>
+- A preset names its gates as moon tasks; a project inherits the file.
+- `moon ci` produces one result per gate.
+- The reporter turns each result into one GitHub check.
 
 <!--
-A project lists its gates once, as commands. A gate with a fix runs it in a commit
-hook atelier puts in the builder's worktree, so formatting never becomes a CI
-failure. Every gate's run command becomes its own check in GitHub's CI, in its own
-container, and only for the parts of the repository the diff touches. atelier's
-daemon on the Mac runs none of them; it reads their results through forge.checks.
-On the right,
-atelier's own PR 64, the one that moved it to Rust 1.100: thirteen gates, each its
-own check. The times are the gates' own; building each container adds about a
-minute around them.
+A preset is a plain moon task file. A project inherits it, moon ci runs it, and
+the reporter makes one check per gate. No runner-specific code in the preset.
 -->
 
 ---
 
-# What the gates catch
+# Gates run in CI
 
-| Gate | Fails when |
-| --- | --- |
-| fmt, Prettier, Ruff | the style drifts; fixed before the commit lands |
-| Clippy, rustdoc | there's any warning, in the code or its docs |
-| nextest, doctests | behavior breaks, or an example in the docs stops running |
-| cargo-deny, cargo-shear | a licence isn't allowed, a crate is yanked or doubled, a dependency is unused |
-| MSRV | the code needs a newer Rust than the `rust-version` in `Cargo.toml` (1.100), checked with exactly that toolchain |
-| Kani | a proof about the issue machine no longer holds; in atelier's own CI, both core proofs must run |
-| cargo-mutants | a test passes whatever the code does: each changed line is broken on purpose, and no mutant may survive or time out |
+Every gate runs in CI or a bounded container: no root, no capabilities, no
+credentials, limited memory and processes.
 
-<div class="text-sm opacity-80 mt-2">
-Every gate runs in GitHub's CI, in a locked-down container: no root, no
-capabilities, no credentials, bounded memory and processes. atelier's daemon runs
-none on the Mac; it reads their results through <code>forge.checks</code>. A fresh
-offline container checks the Kani and mutation reports; a missing or empty one
-fails the gate.
-</div>
+- A missing or empty report fails its gate.
+- A change to CI or the runner needs review for what it loosens.
+- No gate runs on a developer's machine.
+
+The reporter and its report validation arrive with the Rust presets (#87).
 
 <!--
-The container: user 10001, all capabilities dropped, no-new-privileges, its own PID
-namespace, no Docker socket or credentials, bounded memory, CPU and 4,096 processes.
-
-These are atelier's own gates. The one that matters most for agent-written code is
-mutation testing: agents are good at writing tests that pass. cargo-mutants changes
-each line the PR touched, flipping a condition or returning a default, and fails the
-check if no test notices. That's how you know the tests test something. When the
-mutants gate runs but the diff selects no mutant, it mutates a fixed canary instead,
-the background step runner in crates/cli/src/command_step/run.rs, so the report is
-never empty. A change only to docs, scripts or .github plans no mutants gate at all.
-
-The MSRV gate reads the minimum from Cargo.toml, so raising it to 1.100 needed no
-config change. It installs that toolchain in setup, and the check runs with
-RUSTUP_AUTO_INSTALL=0, so it never auto-installs one.
-
-Why the container: on 13 November a local mutation run changed atelier's own
-process-group check to accept group 1, and a cleanup test reached kill -KILL -1 on
-the Mac. Every group signal now goes through one guard, but a guard is defence in
-depth: a mutant can change the guard too. The container is the containment.
-
-Under the owner's proof contract, the installed daemon orchestrates real
-repositories and pull requests, while mutation, fuzzing and process-signalling
-checks run only in contained CI, which it observes through forge.checks. A local
-command step in the proof is benign, bounded and confined to repository data.
-
-Language plugins will bring these defaults to any Rust, TypeScript or TLA+
-project. A critic agent's review and a recording of the feature are the next
-stages.
+Containment is a rule for the gates, not a claim about today. The presets and
+their runner arrive in slice 1, and the report rule then applies to every gate.
 -->
 
 ---
-layout: demo
----
 
-# How the factory stays high quality
+# How the gates stay honest
 
-- **The agent can't declare itself done.** It marks the PR ready only after atelier
-  tells it every check passed; a person merges.
-- **One set of gates per project**, listed once. Their fixes run before every
-  commit, and CI runs each gate as its own check.
-- **The rules come from the base branch,** so a branch or a PR can't loosen the
-  limits it runs under.
-- **Every step is saved before it acts,** so a crash resumes instead of repeating.
+- **One check per gate**, so a failure names the gate that failed.
+- **Presets stay plain task files**, so the runner can change later.
+- **Reports fail closed**, so a missing result fails its gate.
+- **A person merges**, after the checks are green.
 
-Next: **pipelines** of steps, and runs started by **sourcefed**.
-
-::right::
-
-![atelier gates lists the gates; check fails on an unformatted docs table and fix fixes it; the pull request shows each gate as its own check](./media/atelier/docs/media/slice-2.gif)
-
-`check` fails on an unformatted table, and `fix` fixes it.
+Next: metrics against the previous version (#88), then agent review as a check
+(#89).
 
 <!--
-What makes it a high-quality factory rather than a fast one: the agent never grades
-its own work. atelier applies the gates' fixes before each commit, runs every gate in CI, tells the
-builder when everything passed, and a person merges. The config comes from the base
-branch, so a PR can't relax its own checks, and every step is saved before it acts.
-Next come pipelines, and runs started by sourcefed: a label, a Jira query or a 2
-a.m. schedule.
+The quality idea: a gate is visible as its own check, the preset does not depend
+on the runner, and a missing report is a failure. A person merges.
 -->
 
 ---
@@ -816,17 +692,18 @@ flowchart LR
     SF -- "is this worth a turn?" --> CH["Chauffeur"]
     CH -- "only what matters" --> Agent["your coding agent"]
     CH -- "judges every step" --> Agent
-    SF -. "planned: label, query, schedule" .-> AT["atelier"]
-    AT -- "starts builders" --> Agent
+    Agent -- "opens a pull request" --> CI["moon ci"]
+    CI -- "one result per gate" --> AT["atelier reporter"]
+    AT -- "one check per gate" --> PR["pull request"]
 ```
 
-Each one works alone. Together, the agent hears what changed, stays on course, and
-ships through the same gates every time.
+Each works alone. Together the agent hears what changed, stays on course, and
+ships behind gates that report as their own checks.
 
 <!--
-Each of these is useful on its own. Together: sourcefed hears the world, Chauffeur
-decides what reaches the agent and keeps it on course, and atelier turns the work
-into proven pull requests.
+sourcefed hears the world, Chauffeur decides what reaches the agent, and
+atelier's reporter puts the gate results on the pull request. The event-driven
+plugin on tack follows the presets and is planned.
 -->
 
 ---
@@ -873,11 +750,11 @@ layout: section
 
 # Under the hood
 
-Two internal tools for building all of this
+Two pieces the redesign builds on
 
 ---
 
-# tack and rungs
+# tack and moon
 
 <div class="grid grid-cols-2 gap-10 mt-6">
 <div>
@@ -891,19 +768,17 @@ It's how these tools reach every agent without a port per harness.
 </div>
 <div>
 
-### rungs
+### moon
 
-A small step machine: plans of steps that wait on earlier outcomes.
-`no_std`, no allocation, no dependencies, every run proven to end with Kani.
-It is the shared foundation for atelier's pipelines and Chauffeur's strategies.
+The task runner behind atelier's presets. Gates are plain task files, so a
+project inherits them and `moon ci` runs the same checks in CI or a container.
 
 </div>
 </div>
 
 <!--
-Two internal tools, not the point of the talk. tack is how the plugins reach every
-harness from one definition. rungs is the step machine inside atelier's pipelines and
-Chauffeur's strategies.
+Two pieces the redesign builds on. tack is how plugins reach every harness from
+one definition. moon runs the gate tasks that atelier's presets describe.
 -->
 
 ---
