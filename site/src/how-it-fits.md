@@ -1,38 +1,8 @@
 # How it fits
 
-Workhorse projects help a person turn an issue into a pull request and keep
-an agent informed as work changes. Each project has its own job: atelier
-runs work, sourcefed delivers events, and Chauffeur judges them when asked.
-
-```mermaid
-flowchart LR
-    Issue["GitHub issue<br/>atelier:build"] -->|"issue and label"| Atelier["atelier<br/>pipeline"]
-    Atelier -->|"worktree and session"| Builder["OpenCode builder"]
-    Builder -->|"opens draft"| PR["GitHub pull request"]
-    Builder -->|"creates PR monitor"| Sourcefed["sourcefed"]
-    PR -->|"failed checks and reviews"| Sourcefed
-    Sourcefed -->|"messages"| Builder
-    PR -->|"polled CI state"| Atelier
-    Atelier -->|"checks passed"| Builder
-    Builder -->|"marks ready for review"| PR
-```
-
-## From label to pull request
-
-Add `atelier:build` to an issue in a watched GitHub project. atelier polls
-the issue, claims it and starts a pipeline. Its OpenCode builder works in
-its own worktree. In the released `v0.1.0-rc.8`, the
-[GitHub adapter's brief](https://github.com/wrkhse/atelier/blob/v0.1.0-rc.8/plugins/github/src/forge.rs#L144-L153)
-tells the builder to open a draft pull request and create a sourcefed PR
-monitor. Failed checks and reviews reach the builder as messages. atelier
-polls GitHub for CI state and tells the builder when checks pass; the builder
-marks the pull request ready for review. sourcefed feeds events back to the
-builder; it does not start this run.
-
-See [atelier's run machine](https://github.com/wrkhse/atelier/tree/main/crates/core/src/machine)
-and its [GitHub](https://github.com/wrkhse/atelier/tree/main/plugins/github)
-and [OpenCode](https://github.com/wrkhse/atelier/tree/main/plugins/opencode)
-adapters.
+This page describes what runs today: sourcefed delivers events to agents and
+programs, and Chauffeur triages them when asked. The
+[design](/workhorse/PHILOSOPHY) describes how the projects fit together.
 
 ## Events and decisions
 
@@ -68,7 +38,7 @@ request and response.
 
 ## Boundaries and code
 
-atelier runs application work, sourcefed delivers events, and Chauffeur
+atelier is a CI engine for monorepos, sourcefed delivers events, and Chauffeur
 judges them. barn holds design specs for
 [grant](https://github.com/wrkhse/barn/issues/14),
 [steering](https://github.com/wrkhse/barn/issues/15),
@@ -76,26 +46,17 @@ judges them. barn holds design specs for
 [control](https://github.com/wrkhse/barn/issues/17).
 These are design specs, not runtime promises.
 
-- **atelier:** [core and pipeline](https://github.com/wrkhse/atelier/tree/main/crates/core),
-  [worktrees](https://github.com/wrkhse/atelier/tree/main/crates/git), and
-  [plugins](https://github.com/wrkhse/atelier/tree/main/plugins).
-  Its run machine depends on rungs on
-  [`main`](https://github.com/wrkhse/atelier/blob/main/crates/core/Cargo.toml),
-  outside the `v0.1.0-rc.8` release.
 - **sourcefed:** [daemon](https://github.com/wrkhse/sourcefed/tree/main/packages/daemon)
   and [SDK](https://github.com/wrkhse/sourcefed/tree/main/packages/sdk).
 - **Chauffeur:** [core](https://github.com/wrkhse/chauffeur/tree/v2/crates/core)
   and [daemon](https://github.com/wrkhse/chauffeur/tree/v2/crates/daemon).
-  Its core also depends on rungs.
-- **tack:** [OpenCode and Pi adapters](https://github.com/wrkhse/tack/tree/main/src/agents)
-  and [session support](https://github.com/wrkhse/tack/blob/main/src/session.ts).
-- **rungs:** the [step machine](https://github.com/wrkhse/rungs/tree/main).
+- **tack:** [OpenCode adapter](https://github.com/wrkhse/tack/tree/main/adapters/opencode)
+  and [daemon](https://github.com/wrkhse/tack/tree/main/crates/daemon/src).
 - **barn:** the [CLI crate](https://github.com/wrkhse/barn/tree/main/crates/barn)
   holds the command-line surface.
 
 Master issues: [barn#1](https://github.com/wrkhse/barn/issues/1),
 [tack#1](https://github.com/wrkhse/tack/issues/1),
 [sourcefed#3](https://github.com/wrkhse/sourcefed/issues/3),
-[atelier#1](https://github.com/wrkhse/atelier/issues/1),
-[o11y#1](https://github.com/wrkhse/o11y/issues/1),
-[Chauffeur v2#43](https://github.com/wrkhse/chauffeur/issues/43).
+[Chauffeur v2#43](https://github.com/wrkhse/chauffeur/issues/43),
+[o11y#1](https://github.com/wrkhse/o11y/issues/1).
