@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The marker comment keeps the full review for workers; the review body repeats only its verdict.
 review_body() {
-  awk '/^<!-- opencode-findings-json[[:space:]]*$/ { exit } { print }' < "$1" |
-    jq -jRs '
-      def trim_end: sub("[[:space:]]+\\z"; "");
-      trim_end | sub("(^|\\n)\\[github run\\]\\([^\\n]*\\)\\z"; "") | trim_end
-    '
+  awk '
+    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
+    /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); printf "%s", $0; found = 1; exit }
+    END { if (!found) printf "%s", "See the opencode review comment on this pull request for the full review." }
+  ' < "$1"
 }
 
 extract_findings() {
@@ -23,7 +24,7 @@ extract_findings() {
       and (.line | type == "number" and . >= 1 and floor == .)
       and (side == "RIGHT" or side == "LEFT")
       and (.severity == "MUST" or .severity == "SHOULD")
-      and (.body | type == "string" and length <= 1500)
+      and (.body | type == "string" and length >= 1 and length <= 1500)
       and (if has("commit") then (.commit | type == "string") else true end);
     select(length == 1) | .[0]
     | select(type == "array" and length <= 30 and all(.[]; valid_finding))
@@ -37,6 +38,11 @@ right_lines() {
     !in_hunk && /^\+\+\+ b\// {
       path = substr($0, 7)
       sub(/\t$/, "", path)
+      next
+    }
+    !in_hunk && /^\+\+\+ "b\/.*"\t?$/ {
+      path = substr($0, 8)
+      sub(/"\t?$/, "", path)
       next
     }
     !in_hunk && /^\+\+\+ \/dev\/null$/ { path = ""; next }
@@ -92,7 +98,7 @@ minimize_old_reviews() {
   local newest="$1" err="$2"
   local reviews id minimized
 
-  if ! reviews=$(gh api graphql --paginate -f owner="${REPO%/*}" -f repo="${REPO#*/}" -F pr="$PR" -f query='
+  if ! reviews=$("${GH:-gh}" api graphql --paginate -f owner="${REPO%/*}" -f repo="${REPO#*/}" -F pr="$PR" -f query='
     query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $pr) {
@@ -126,7 +132,7 @@ minimize_old_reviews() {
     if [ "$minimized" = true ]; then
       printf 'Review %s is already minimized.\n' "$id"
     elif {
-      gh api graphql -f id="$id" -f query='
+      "${GH:-gh}" api graphql -f id="$id" -f query='
         mutation($id: ID!) {
           minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
             minimizedComment { isMinimized }
@@ -150,6 +156,27 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
+# Never fails silently: a rejected review falls back to one plain comment with its body.
+post_review() {
+  local payload="$1" work="$2"
+  local newest
+
+  if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" --input "$payload" \
+    > "$work/review.json"; then
+    echo 'WARNING: Could not post the review; posting its body as a plain comment instead.' >&2
+    jq '{body: (.body + "\n\nInline comments could not be posted.")}' "$payload" > "$work/fallback.json"
+    "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$work/fallback.json" --silent
+    return 0
+  fi
+
+  if ! newest=$(jq -er '.node_id | strings | select(length > 0)' "$work/review.json"); then
+    echo 'WARNING: Posted the review but its node ID was missing; skipping minimization.' >&2
+    return 0
+  fi
+  printf 'Posted review %s.\n' "$newest"
+  minimize_old_reviews "$newest" "$work/minimize.err"
+}
+
 main() (
   : "${REPO:?REPO is required}" "${PR:?PR is required}" \
     "${GH_TOKEN:?GH_TOKEN is required}" "${DIFF:?DIFF is required}"
@@ -159,23 +186,23 @@ main() (
   temp=$(mktemp -d "${out%/}/post-review.XXXXXX")
   trap 'rm -rf -- "$temp"' EXIT
 
-  gh api "repos/$REPO/issues/$PR/comments" --paginate |
+  "${GH:-gh}" api "repos/$REPO/issues/$PR/comments" --paginate |
     jq -sr '
-      map(.[] | select(.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]"))
+      map(.[] | select(
+        (.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]")
+        and (.body // "" | startswith("<!-- opencode-review -->"))
+      ))
       | max_by(.id) | .body // ""
     ' > "$temp/comment"
 
   prepare_review "$temp/comment" "$DIFF" "$temp" > "$temp/payload.json"
   if ! jq -e 'has("comments")' "$temp/payload.json" > /dev/null; then
     echo 'WARNING: Inline review comments skipped: findings JSON was missing or malformed.' >&2
-    gh api --method POST "repos/$REPO/issues/$PR/comments" --input "$temp/payload.json" --silent
+    "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$temp/payload.json" --silent
     exit 0
   fi
 
-  newest=$(gh api --method POST "repos/$REPO/pulls/$PR/reviews" --input "$temp/payload.json" |
-    jq -er '.node_id | strings | select(length > 0)')
-  printf 'Posted review %s.\n' "$newest"
-  minimize_old_reviews "$newest" "$temp/minimize.err"
+  post_review "$temp/payload.json" "$temp"
 )
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

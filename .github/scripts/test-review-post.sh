@@ -27,7 +27,8 @@ diff --git a/b.txt b/b.txt
 DIFF
 
 write_comment() {
-  printf '%s\n' 'Review summary.' '' '[github run](https://github.example/run/1)' '' \
+  printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' 'Review summary.' '' \
+    '[github run](https://github.example/run/1)' '' \
     '<!-- opencode-findings-json' "$1" '-->' > "$tmp/comment"
 }
 
@@ -37,7 +38,7 @@ payload() {
 
 assert_fallback() {
   payload | jq -e '. == {
-    body: "Review summary.\n\nInline comments were skipped because the findings JSON was malformed."
+    body: "**Verdict: FIX FIRST**\n\nInline comments were skipped because the findings JSON was malformed."
   }' > /dev/null
 }
 
@@ -48,7 +49,7 @@ write_comment '[
 extract_findings "$tmp/comment" | jq -e 'map(.side) == ["RIGHT","RIGHT"]' > /dev/null
 payload | jq -e '. == {
   event: "COMMENT",
-  body: ("Review summary.\n\nSome findings were moved here because they could not be posted inline."
+  body: ("**Verdict: FIX FIRST**\n\nSome findings were moved here because they could not be posted inline."
     + "\n\n- a.txt:7 (SHOULD): Consider this."),
   comments: [{path:"a.txt",line:2,side:"RIGHT",body:"Fix this."}]
 }' > /dev/null
@@ -61,7 +62,7 @@ write_comment '[
 ]'
 payload | jq -e '. == {
   event: "COMMENT",
-  body: ("Review summary.\n\nSome findings were moved here because they could not be posted inline."
+  body: ("**Verdict: FIX FIRST**\n\nSome findings were moved here because they could not be posted inline."
     + "\n\n- a.txt:2 (SHOULD): Old line.\n- a.txt:3 (MUST): Deleted line."),
   comments: [{path:"a.txt",line:1,side:"RIGHT",body:"Context."}]
 }' > /dev/null
@@ -71,7 +72,8 @@ write_comment '[broken'
 assert_fallback
 printf 'ok: malformed JSON falls back without inline comments\n'
 
-printf '%s\n' 'Review summary.' '[github run](https://github.example/run/1)' > "$tmp/comment"
+printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' 'Review summary.' \
+  '[github run](https://github.example/run/1)' > "$tmp/comment"
 assert_fallback
 printf 'ok: absent block falls back without inline comments\n'
 
@@ -90,10 +92,101 @@ write_comment '[
 ]'
 payload | jq -e '. == {
   event: "COMMENT",
-  body: "Review summary.",
+  body: "**Verdict: FIX FIRST**",
   comments: [
     {path:"a.txt",line:18,side:"RIGHT",body:"Second hunk."},
     {path:"b.txt",line:1,side:"RIGHT",body:"Second file."}
   ]
 }' > /dev/null
 printf 'ok: multiple hunks and files\n'
+
+# The stub gh lives in $tmp and records each POST payload beside itself, so
+# main runs its real posting path without the network.
+cat > "$tmp/gh" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+dir=$(dirname -- "$0")
+[ "${1:-}" = api ] || { echo "stub gh: unexpected command: $*" >&2; exit 2; }
+shift
+method=GET endpoint='' input='' query='' id=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --method) method=$2; shift 2 ;;
+    --input) input=$2; shift 2 ;;
+    -f | -F)
+      case "$2" in
+        query=*) query=${2#query=} ;;
+        id=*) id=${2#id=} ;;
+      esac
+      shift 2
+      ;;
+    --paginate | --silent) shift ;;
+    -*) echo "stub gh: unexpected flag: $1" >&2; exit 2 ;;
+    *) endpoint=$1; shift ;;
+  esac
+done
+case "$method $endpoint" in
+  'GET repos/'*'/issues/'*'/comments') cat -- "$dir/issue-comments.json" ;;
+  'POST repos/'*'/pulls/'*'/reviews')
+    cp -- "$input" "$dir/review-payload.json"
+    if [ -e "$dir/review-fails" ]; then
+      echo 'gh: Validation Failed (HTTP 422)' >&2
+      exit 1
+    fi
+    printf '%s\n' '{"node_id":"PRR_test"}'
+    ;;
+  'POST repos/'*'/issues/'*'/comments') cp -- "$input" "$dir/fallback-payload.json" ;;
+  'GET graphql')
+    case "$query" in
+      *'mutation('*)
+        printf '%s\n' "$id" >> "$dir/minimized"
+        printf '%s\n' '{"data":{"minimizeComment":{"minimizedComment":{"isMinimized":true}}}}'
+        ;;
+      *)
+        printf '%s\n' '{"data":{"repository":{"pullRequest":{"reviews":{"nodes":[
+          {"id":"PRR_old","author":{"login":"github-actions","__typename":"Bot"},"isMinimized":false},
+          {"id":"PRR_test","author":{"login":"github-actions","__typename":"Bot"},"isMinimized":false}
+        ],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}'
+        ;;
+    esac
+    ;;
+  *) echo "stub gh: unexpected request: $method $endpoint" >&2; exit 2 ;;
+esac
+STUB
+chmod +x "$tmp/gh"
+
+summary='This summary belongs only in the marker comment.'
+printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' "$summary" '' \
+  '**MUST**' '- a.txt:2 Fix this.' '' '[github run](https://github.example/run/1)' '' \
+  '<!-- opencode-findings-json' \
+  '[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+    {"path":"a.txt","line":7,"side":"RIGHT","severity":"SHOULD","body":"Off the diff."}]' \
+  '-->' > "$tmp/marker-comment"
+jq -n --rawfile body "$tmp/marker-comment" \
+  '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments.json"
+
+post_with_stub() {
+  rm -f -- "$tmp/review-payload.json" "$tmp/fallback-payload.json" "$tmp/minimized"
+  if ! GH="$tmp/gh" REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" OUT="$tmp/out" \
+    main > "$tmp/main.out" 2> "$tmp/main.err"; then
+    cat -- "$tmp/main.out" "$tmp/main.err" >&2
+    return 1
+  fi
+}
+
+post_with_stub
+jq -e --arg summary "$summary" '
+  .event == "COMMENT"
+  and (.body | startswith("**Verdict: FIX FIRST**"))
+  and (.body | contains($summary) | not)
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+[ ! -e "$tmp/fallback-payload.json" ]
+[ "$(cat -- "$tmp/minimized")" = PRR_old ]
+printf 'ok: stub gh review has verdict body and inline comments on diff lines only\n'
+
+touch -- "$tmp/review-fails"
+post_with_stub
+jq -e 'keys == ["body"] and (.body | startswith("**Verdict: FIX FIRST**"))' \
+  "$tmp/fallback-payload.json" > /dev/null
+printf 'ok: failed review POST falls back to a plain comment\n'
