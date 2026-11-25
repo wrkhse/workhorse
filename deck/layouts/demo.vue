@@ -18,11 +18,11 @@
 -->
 
 <script setup lang="ts">
-import { useIsSlideActive } from "@slidev/client"
-import { ref } from "vue"
+import { useIsSlideActive } from "@slidev/client";
+import { ref } from "vue";
 
-const isActive = useIsSlideActive()
-const dialog = ref<HTMLDialogElement | null>(null)
+const isActive = useIsSlideActive();
+const dialog = ref<HTMLDialogElement | null>(null);
 </script>
 
 <template>

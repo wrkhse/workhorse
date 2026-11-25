@@ -134,13 +134,13 @@ layout: demo
 
 # Reviews, threads, tickets, feeds
 
-| Source | Watches |
-| --- | --- |
-| GitHub | a PR, or every issue with a label |
-| Slack | a thread, or a DM |
-| Jira | a ticket, or a JQL query |
-| Schedule | a cron time |
-| Feeds | Gmail, RSS, Atom, JSON |
+| Source   | Watches                           |
+| -------- | --------------------------------- |
+| GitHub   | a PR, or every issue with a label |
+| Slack    | a thread, or a DM                 |
+| Jira     | a ticket, or a JQL query          |
+| Schedule | a cron time                       |
+| Feeds    | Gmail, RSS, Atom, JSON            |
 
 Plugins for OpenCode and Pi, MCP for Claude Code and Codex, HTTP for programs.
 
@@ -641,15 +641,15 @@ the reporter.
 
 # What the Rust preset checks
 
-| Gate      | Fails when                                            |
-| --------- | ----------------------------------------------------- |
-| fmt       | formatting drifts                                     |
-| clippy    | the compiler warns                                    |
-| test      | a test fails                                          |
-| Kani      | a proof no longer holds                               |
-| miri      | undefined behaviour appears                           |
-| mutants   | a change to a line is not caught by a test            |
-| MSRV      | the code needs a newer Rust than the declared minimum |
+| Gate    | Fails when                                            |
+| ------- | ----------------------------------------------------- |
+| fmt     | formatting drifts                                     |
+| clippy  | the compiler warns                                    |
+| test    | a test fails                                          |
+| Kani    | a proof no longer holds                               |
+| miri    | undefined behaviour appears                           |
+| mutants | a change to a line is not caught by a test            |
+| MSRV    | the code needs a newer Rust than the declared minimum |
 
 Each gate runs in CI or a container, never on a developer's machine. The exact
 defaults and thresholds are open in the design (#85).

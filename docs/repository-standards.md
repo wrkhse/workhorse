@@ -40,7 +40,7 @@ exists because a template has a slot for it.
 | Example                 | One small illustration of the main action       |
 | Uses                    | One short section for each task                 |
 | Inner docs              | Links to the full spec                          |
-| Roadmap                 | An optional checklist of unbuilt outcomes      |
+| Roadmap                 | An optional checklist of unbuilt outcomes       |
 
 ## Prose
 

@@ -1,5 +1,5 @@
-import { Glob } from "bun"
-import { groups, type Group, type Project } from "../../hub.config"
+import { Glob } from "bun";
+import { groups, type Group, type Project } from "../../hub.config";
 
 /**
  * Files no reader of the site needs, wherever a project keeps them: hidden
@@ -13,18 +13,18 @@ export const NEVER = [
   "mutants.out*/**",
   "**/AGENTS.md",
   "**/CLAUDE.md",
-]
+];
 
 /** One page the hub pulls: its path in the project, and the group it shows under. */
-export type Selected = { source: string; group: Group }
+export type Selected = { source: string; group: Group };
 
 /** Natural order, so `slice-2` precedes `slice-10`. */
 const natural = (a: string, b: string) =>
-  a.localeCompare(b, undefined, { numeric: true })
+  a.localeCompare(b, undefined, { numeric: true });
 
 /** The globs one group pulls: the overview is one page, every other group is optional. */
 const patterns = (project: Project, group: Group): string[] =>
-  group === "overview" ? [project.overview] : (project[group] ?? [])
+  group === "overview" ? [project.overview] : (project[group] ?? []);
 
 /**
  * The pages a project shows, group by group in the hub's order. `files`
@@ -39,31 +39,33 @@ export function select(
 ): { pages: Selected[]; unmatched: string[] } {
   const skipped = [...(project.exclude ?? []), ...NEVER].map(
     (pattern) => new Glob(pattern),
-  )
-  const seen = new Set<string>()
-  const pages: Selected[] = []
-  const unmatched: string[] = []
+  );
+  const seen = new Set<string>();
+  const pages: Selected[] = [];
+  const unmatched: string[] = [];
 
   for (const { id: group } of groups) {
     for (const pattern of patterns(project, group)) {
-      const found = files(pattern)
-      if (found.length === 0) unmatched.push(pattern)
+      const found = files(pattern);
+      if (found.length === 0) unmatched.push(pattern);
 
       for (const source of found.toSorted(natural)) {
-        if (seen.has(source) || skipped.some((glob) => glob.match(source))) continue
-        seen.add(source)
-        pages.push({ source, group })
+        if (seen.has(source) || skipped.some((glob) => glob.match(source)))
+          continue;
+        seen.add(source);
+        pages.push({ source, group });
       }
     }
   }
 
-  return { pages, unmatched }
+  return { pages, unmatched };
 }
 
 /** A capital S and a colon mark a status line, so prose and shell never pass for one. */
-const STATUS = /^\s*(?:\*\*)?Status(?:\*\*)?\s*:/
-const HELD = /^\s*(?:\*\*)?Status(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?:Planned|Held)\b/i
-const FENCE = /^\s*(?:```|~~~)/
+const STATUS = /^\s*(?:\*\*)?Status(?:\*\*)?\s*:/;
+const HELD =
+  /^\s*(?:\*\*)?Status(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?:Planned|Held)\b/i;
+const FENCE = /^\s*(?:```|~~~)/;
 
 /**
  * Whether a page's status says Planned or Held. Planned design lives in
@@ -72,17 +74,17 @@ const FENCE = /^\s*(?:```|~~~)/
  * Lines inside fenced code are examples, never a status or a section.
  */
 export function held(markdown: string): boolean {
-  let fenced = false
+  let fenced = false;
 
   for (const line of markdown.split("\n")) {
     if (FENCE.test(line)) {
-      fenced = !fenced
-      continue
+      fenced = !fenced;
+      continue;
     }
-    if (fenced) continue
-    if (line.startsWith("## ")) return false
-    if (STATUS.test(line)) return HELD.test(line)
+    if (fenced) continue;
+    if (line.startsWith("## ")) return false;
+    if (STATUS.test(line)) return HELD.test(line);
   }
 
-  return false
+  return false;
 }

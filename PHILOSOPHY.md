@@ -64,13 +64,13 @@ flowchart TB
 This is how I think about each project's design, including pieces that are
 not built yet:
 
-| Project | Core | Extensions | Connections | Status |
-| --- | --- | --- | --- | --- |
-| tack | a universal agent adapter: one plugin, every harness | modules its compiler builds in: barn, skills, transports, client, opt-in sdk; modules from git | harness adapters for OpenCode, Pi, Claude Code and Codex; MCP server; CLI | OpenCode works (v0.1.0-rc.2); Claude Code planned (#47) |
-| barn | a sandbox and runtime-stall engine | stalls, one per tool, plus runtimes (Luau first; QuickJS or V8 later) | tack, chauffeur and sourcefed depend on it; `control` JSON-RPC; listeners; CLI | slice 1 in progress (#21); runtime stalls planned (#23) |
-| sourcefed | a source event manager: takes in events from every source and feeds them on | Luau sources; plugins such as Chauffeur's triage hook | tack: agent tools, MCP, CLI, client | TypeScript version live; Rust core in progress (sourcefed#86) |
-| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins | tack: harness adapters, CLI, `ask_chauffeur`; sourcefed sdk hooks | Rust core in progress (#57) |
-| atelier | a CI engine for monorepos | presets: gates per language, metrics, agent review | moon and GitHub checks | presets in progress (#87); #88 and #89 planned |
+| Project   | Core                                                                                        | Extensions                                                                                     | Connections                                                                    | Status                                                        |
+| --------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| tack      | a universal agent adapter: one plugin, every harness                                        | modules its compiler builds in: barn, skills, transports, client, opt-in sdk; modules from git | harness adapters for OpenCode, Pi, Claude Code and Codex; MCP server; CLI      | OpenCode works (v0.1.0-rc.2); Claude Code planned (#47)       |
+| barn      | a sandbox and runtime-stall engine                                                          | stalls, one per tool, plus runtimes (Luau first; QuickJS or V8 later)                          | tack, chauffeur and sourcefed depend on it; `control` JSON-RPC; listeners; CLI | slice 1 in progress (#21); runtime stalls planned (#23)       |
+| sourcefed | a source event manager: takes in events from every source and feeds them on                 | Luau sources; plugins such as Chauffeur's triage hook                                          | tack: agent tools, MCP, CLI, client                                            | TypeScript version live; Rust core in progress (sourcefed#86) |
+| Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins                                               | tack: harness adapters, CLI, `ask_chauffeur`; sourcefed sdk hooks              | Rust core in progress (#57)                                   |
+| atelier   | a CI engine for monorepos                                                                   | presets: gates per language, metrics, agent review                                             | moon and GitHub checks                                                         | presets in progress (#87); #88 and #89 planned                |
 
 tack is how every other project reaches agents: sourcefed, Chauffeur and
 atelier are each a tack plugin, so their connections are the ones tack builds.

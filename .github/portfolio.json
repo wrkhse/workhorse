@@ -6,13 +6,8 @@
     "The `daemon` is a **shared capability daemon** and a framework for building **modular MCP servers**.",
     "The original fleet is kept, archived, in `wrkhse/fleet-v0`."
   ],
-  "areas": [
-    "ai-agents",
-    "developer-tools"
-  ],
+  "areas": ["ai-agents", "developer-tools"],
   "technologies": {
-    "add": [
-      "mcp"
-    ]
+    "add": ["mcp"]
   }
 }

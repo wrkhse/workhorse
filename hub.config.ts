@@ -3,7 +3,7 @@
  * repositories the roadmap tracks before they have pages, and the archived
  * ones it lists as history. Nothing else holds an owner or a branch.
  */
-const owner = "wrkhse"
+const owner = "wrkhse";
 
 /** The groups a project's section is split into, in the sidebar's order. */
 export const groups = [
@@ -12,53 +12,53 @@ export const groups = [
   { id: "reference", title: "Reference" },
   { id: "design", title: "Design" },
   { id: "code", title: "Code" },
-] as const
+] as const;
 
-export type Group = (typeof groups)[number]["id"]
+export type Group = (typeof groups)[number]["id"];
 
 /** A repository the roadmap follows by its plan issue; it has no pages. */
 export type Tracked = {
-  name: string
+  name: string;
   /** `owner/name` on GitHub. */
-  repo: string
+  repo: string;
   /** The repository's master issue. */
-  plan: number
-}
+  plan: number;
+};
 
 export type Project = {
   /** The project's path on the site, such as `/atelier/`. */
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** `owner/name` on GitHub. */
-  repo: string
+  repo: string;
   /** The branch the hub pulls, and that its links to code point at. */
-  branch: string
-  summary: string
+  branch: string;
+  summary: string;
   /** The page the section opens on, from the repository's root. */
-  overview: string
+  overview: string;
   /**
    * Globs from the repository's root. A page sits in the first group, in
    * `groups` order, that matches it.
    */
-  guides?: string[]
+  guides?: string[];
   /** Globs, as for `guides`. */
-  reference?: string[]
+  reference?: string[];
   /** Globs, as for `guides`. */
-  design?: string[]
+  design?: string[];
   /** Globs, as for `guides`. */
-  code?: string[]
+  code?: string[];
   /** Globs the groups match that the hub leaves out: pages the docs scan retires. */
-  exclude?: string[]
+  exclude?: string[];
   /** The branch the deck's recordings come from, when it is not `branch`. */
-  demos?: string
+  demos?: string;
   /** The project's master issue, shown on the roadmap. */
-  plan?: number
-}
+  plan?: number;
+};
 
 export type Archived = {
-  repo: string
-  summary: string
-}
+  repo: string;
+  summary: string;
+};
 
 export const hub = {
   /** This repository: it builds the hub and is pulled from its own checkout. */
@@ -107,7 +107,8 @@ export const hub = {
       name: "rungs",
       repo: `${owner}/rungs`,
       branch: "main",
-      summary: "A small, proven step machine: no_std, no alloc, no dependencies",
+      summary:
+        "A small, proven step machine: no_std, no alloc, no dependencies",
       overview: "README.md",
       plan: 1,
     },
@@ -130,7 +131,8 @@ export const hub = {
       name: "Chauffeur",
       repo: `${owner}/chauffeur`,
       branch: "v2",
-      summary: "Enhances a coding agent's context as it works: sense, classify, act",
+      summary:
+        "Enhances a coding agent's context as it works: sense, classify, act",
       overview: "README.md",
       guides: [
         "playground/README.md",
@@ -217,7 +219,9 @@ export const hub = {
    * Repositories the roadmap follows by their plan issue, with no pages on the
    * site yet.
    */
-  tracked: [{ name: "o11y", repo: `${owner}/o11y`, plan: 1 }] satisfies Tracked[],
+  tracked: [
+    { name: "o11y", repo: `${owner}/o11y`, plan: 1 },
+  ] satisfies Tracked[],
   history: [
     {
       repo: `${owner}/daemon-v0`,
@@ -229,9 +233,10 @@ export const hub = {
     },
     {
       repo: `${owner}/workhorse-legacy`,
-      summary: "The original command-line and terminal UI tool, as of 2026-07-14",
+      summary:
+        "The original command-line and terminal UI tool, as of 2026-07-14",
     },
   ] satisfies Archived[],
-}
+};
 
-export const github = (repo: string) => `https://github.com/${repo}`
+export const github = (repo: string) => `https://github.com/${repo}`;
