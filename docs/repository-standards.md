@@ -131,6 +131,11 @@ flowchart LR
 - **Source match:** the calls, flags and commands in the block exist in the
   source it documents, with arguments the source accepts.
 
+## Issues and pull requests
+
+Issues and pull requests follow
+[issues-and-pull-requests.md](issues-and-pull-requests.md).
+
 ## Enforcement
 
 | Part                         | Held by                     |
