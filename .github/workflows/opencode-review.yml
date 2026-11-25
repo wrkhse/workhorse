@@ -41,19 +41,32 @@ jobs:
             -d subject_token="$oidc" | jq -re .access_token)
           echo "::add-mask::$token"
           echo "OPENCODE_API_KEY=$token" >> "$GITHUB_ENV"
-      - uses: anomalyco/opencode/github@f4e363c8295fa90a03dddc451882fffe8fbce357 # v1.19.6
+      - name: Install opencode v1.19.6
+        env:
+          SHA256: 47734e08968b30cc22a0bffb6d9feeed76ad4aa743213a12122040392d09a057
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o opencode.tgz \
+            https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-x64.tar.gz
+          echo "$SHA256  opencode.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/opencode"
+          tar -xzf opencode.tgz -C "$RUNNER_TEMP/opencode" opencode
+          rm opencode.tgz
+          echo "$RUNNER_TEMP/opencode" >> "$GITHUB_PATH"
+      - name: Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_GITHUB_TOKEN: "true"
+          MODEL: opencode-go/deepseek-v4.1-flash
           # Nobody answers prompts in CI, so nothing may ask. The reviewer only
-          # reads: edits, web fetches and paths outside the checkout are denied.
+          # reads: edits, web fetches, questions and paths outside the checkout
+          # are denied.
           OPENCODE_CONFIG_CONTENT: >-
             {"small_model":"opencode-go/deepseek-v4.1-flash",
             "permission":{"external_directory":"deny","edit":"deny",
-            "webfetch":"deny","doom_loop":"deny"}}
-        with:
-          model: opencode-go/deepseek-v4.1-flash
-          use_github_token: true
-          prompt: |
+            "webfetch":"deny","question":"deny","doom_loop":"deny"}}
+          PROMPT: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. Base: ${{ github.event.pull_request.base.sha }}.
             Head: ${{ github.event.pull_request.head.sha }}. Below, BASE and HEAD
@@ -102,6 +115,8 @@ jobs:
             **MUST** (bugs and every gaming finding), one line each with
             file:line. **SHOULD**, one line each. Omit an empty section.
             At most 25 lines. No praise.
+        shell: bash
+        run: opencode github run
       - name: Keep only the newest review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
