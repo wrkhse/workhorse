@@ -67,8 +67,10 @@ its next version reaches the others through tack, which comes at the end.
 -->
 
 ---
+
+```yaml
 layout: center
----
+```
 
 # Your agent can't hear the world
 
@@ -93,8 +95,10 @@ Jira ticket, or my inbox. So I end up being the agent's notification system.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # sourcefed
 
@@ -123,8 +127,10 @@ over the failing log, and the agent fixes it and pushes. Nobody copied anything.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Reviews, threads, tickets, feeds
 
@@ -177,8 +183,10 @@ reinvent the host adapters or event delivery.
 -->
 
 ---
+
+```yaml
 layout: center
----
+```
 
 # But not every event deserves a turn
 
@@ -218,8 +226,10 @@ tokens and money, and it shows you every decision. Let's go through them.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Agents write their own tools
 
@@ -247,8 +257,10 @@ so Chauffeur stops it and steers the agent to the edit tool.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Permissions, judged
 
@@ -277,8 +289,10 @@ about what you'd want to see, and blocks what you'd never allow.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Secrets stay out of the judge
 
@@ -301,8 +315,10 @@ message as it arrived at the judge.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Your new tool, every time
 
@@ -330,8 +346,10 @@ over the skill too.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Ask for what's missing
 
@@ -352,8 +370,10 @@ needs, and Chauffeur grants the matching tool or skill.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Rulebooks: /goal and your own
 
@@ -380,8 +400,10 @@ summary. Projects write their own, like /release.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # The right skill, without the token bill
 
@@ -410,8 +432,10 @@ rate.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Warm caches, cheap returns
 
@@ -441,8 +465,10 @@ again.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # Past usage limits
 
@@ -484,8 +510,10 @@ created get cleaned up.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # See every decision
 
@@ -508,8 +536,10 @@ and decides is config you can edit, and edits apply without a restart.
 -->
 
 ---
+
+```yaml
 layout: demo
----
+```
 
 # sourcefed, through Chauffeur
 
@@ -532,8 +562,10 @@ comes through, so the agent only hears about events worth a turn.
 -->
 
 ---
+
+```yaml
 layout: center
----
+```
 
 # Same gates, every project
 
@@ -707,8 +739,10 @@ plugin on tack follows the presets and is planned.
 -->
 
 ---
+
+```yaml
 layout: center
----
+```
 
 # One daemon, many stalls
 
@@ -745,8 +779,10 @@ atelier last. For development and CI, barn run <stall> runs one in the foregroun
 -->
 
 ---
+
+```yaml
 layout: section
----
+```
 
 # Under the hood
 
@@ -782,8 +818,10 @@ one definition. moon runs the gate tasks that atelier's presets describe.
 -->
 
 ---
+
+```yaml
 layout: center
----
+```
 
 # Read more
 
