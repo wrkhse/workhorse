@@ -37,6 +37,34 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun install --frozen-lockfile
         working-directory: deck
+      - name: Assert Slidev layouts survived block frontmatter
+        working-directory: deck
+        run: |
+          bun -e '
+          import { readFileSync } from "node:fs";
+          import { parseSync } from "@slidev/parser";
+
+          const { slides } = parseSync(readFileSync("slides.md", "utf8"), "slides.md");
+          const actual = slides.map(s => s.frontmatter.layout ?? null);
+          const expected = [
+            null, null, "center", "demo", "demo", null, "center", null,
+            "demo", "demo", "demo", "demo", "demo", "demo", "demo", "demo",
+            "demo", null, "demo", "demo", "center", null, null, null, null,
+            null, null, null, "center", "section", null, "center",
+          ];
+
+          if (actual.some((layout, i) => layout && slides[i].frontmatterStyle !== "yaml")) {
+            console.error("a layout did not come from fenced yaml frontmatter");
+            process.exit(1);
+          }
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            console.error("slide count:", slides.length);
+            console.error("actual:  ", JSON.stringify(actual));
+            console.error("expected:", JSON.stringify(expected));
+            process.exit(1);
+          }
+          console.log(slides.length + " slides, 19 layouts preserved");
+          '
       - run: bun run test
       - run: bun run build
         env:
