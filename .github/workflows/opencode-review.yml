@@ -44,7 +44,12 @@ jobs:
       - uses: anomalyco/opencode/github@f4e363c8295fa90a03dddc451882fffe8fbce357 # v1.19.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_CONFIG_CONTENT: '{"small_model":"opencode-go/deepseek-v4.1-flash"}'
+          # Nobody answers prompts in CI, so nothing may ask. The reviewer only
+          # reads: edits, web fetches and paths outside the checkout are denied.
+          OPENCODE_CONFIG_CONTENT: >-
+            {"small_model":"opencode-go/deepseek-v4.1-flash",
+            "permission":{"external_directory":"deny","edit":"deny",
+            "webfetch":"deny","doom_loop":"deny"}}
         with:
           model: opencode-go/deepseek-v4.1-flash
           use_github_token: true
