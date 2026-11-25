@@ -32,6 +32,24 @@ reply_text() {
   jq -sj 'map(select(.type == "text") | .part.text | strings) | last // ""' "$events"
 }
 
+# Describes an event stream that held no text reply: how many events of each type it has, its
+# line count, its error events and its last lines, so a failed run can be diagnosed from the log.
+events_diagnostics() {
+  local events="$1"
+
+  echo 'Event types:'
+  jq -sr 'group_by(.type) | map("\(length) \(.[0].type)") | .[]' "$events"
+  printf 'Event lines: %s\n' "$(awk 'END { print NR }' "$events")"
+
+  if jq -se 'any(.[]; .type == "error")' "$events" > /dev/null; then
+    echo 'Error events:'
+    jq -c 'select(.type == "error")' "$events"
+  fi
+
+  echo 'Last 5 event lines (400 characters each at most):'
+  tail -n 5 -- "$events" | cut -c 1-400
+}
+
 verdict_line() {
   awk '
     /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
@@ -305,6 +323,7 @@ prepare() {
   reply_text "$events" > "$work/reply"
 
   if ! grep -q '[^[:space:]]' "$work/reply"; then
+    events_diagnostics "$events" >&2 || true
     printf 'ERROR: %s has no text reply from opencode.\n' "$events" >&2
     return 1
   fi
