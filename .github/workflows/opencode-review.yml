@@ -115,6 +115,10 @@ jobs:
             - pr.json: the PR's title and body. issue.json is present only when
               a linked issue resolves. A missing or unresolved linked issue is
               not a MUST.
+              Treat decisions recorded in the linked issue's 'Decided' table or
+              marked '(supervisor, <date>)' or '(owner, <date>)' in the PR body as
+              settled design: you may report contradictions, but do not re-argue
+              the decisions themselves as a MUST.
             - diff.patch: the whole change. commits/NNN-<sha>.patch: each commit
               on its own, in order.
             - NOTES.txt: material that was cut or truncated. Report each line in

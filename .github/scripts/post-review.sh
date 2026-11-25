@@ -11,6 +11,31 @@ set -euo pipefail
 
 review_marker='<!-- opencode-review -->'
 
+# Logs the stream before reply validation, which still owns reporting malformed input.
+events_summary() {
+  local events="$1"
+
+  jq -sr '
+    (group_by(.type // "unknown") | map({key: (.[0].type // "unknown"), value: length})
+      | from_entries) as $types
+    | (map(select(.type == "step_finish")) | last | .part) as $finish
+    | {
+        total: length,
+        types: $types,
+        text_events: ($types.text // 0),
+        step_finish: {
+          reason: ($finish.reason // "unknown"),
+          tokens: {
+            output: ($finish.tokens.output // "unknown"),
+            reasoning: ($finish.tokens.reasoning // "unknown"),
+            total: ($finish.tokens.total // "unknown")
+          }
+        }
+      }
+    | "Review events: \(tojson)"
+  ' "$events" 2> /dev/null || printf 'Review events: unknown\n'
+}
+
 # Prints the last text part of the event stream. An error event means the run failed, so its
 # reply, if any, is not a review.
 reply_text() {
@@ -320,6 +345,7 @@ prepare() {
   local events="$1" diff="$2" work="$3"
   local verdict
 
+  events_summary "$events"
   reply_text "$events" > "$work/reply"
 
   if ! grep -q '[^[:space:]]' "$work/reply"; then
