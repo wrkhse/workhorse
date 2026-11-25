@@ -126,7 +126,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$method $endpoint" in
-  'GET repos/'*'/issues/'*'/comments') cat -- "$dir/issue-comments.json" ;;
+  'GET repos/'*'/issues/'*'/comments')
+    if [ -e "$dir/no-verdict" ]; then
+      cat -- "$dir/issue-comments-no-verdict.json"
+    else
+      cat -- "$dir/issue-comments.json"
+    fi
+    ;;
   'POST repos/'*'/pulls/'*'/reviews')
     cp -- "$input" "$dir/review-payload.json"
     if [ -e "$dir/review-fails" ]; then
@@ -164,11 +170,20 @@ printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' "$summary" '' 
   '-->' > "$tmp/marker-comment"
 jq -n --rawfile body "$tmp/marker-comment" \
   '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments.json"
+sed '/^\*\*Verdict:/d' "$tmp/marker-comment" > "$tmp/marker-comment-no-verdict"
+jq -n --rawfile body "$tmp/marker-comment-no-verdict" \
+  '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments-no-verdict.json"
+
+# A fresh bash runs main through the script's own entrypoint: inside an if or ||
+# the caller's set -e is off, so calling main in-process would mask its failures.
+run_main() {
+  rm -f -- "$tmp/review-payload.json" "$tmp/fallback-payload.json" "$tmp/minimized"
+  GH="$tmp/gh" REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" OUT="$tmp/out" \
+    bash "$(dirname -- "${BASH_SOURCE[0]}")/post-review.sh" > "$tmp/main.out" 2> "$tmp/main.err"
+}
 
 post_with_stub() {
-  rm -f -- "$tmp/review-payload.json" "$tmp/fallback-payload.json" "$tmp/minimized"
-  if ! GH="$tmp/gh" REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" OUT="$tmp/out" \
-    main > "$tmp/main.out" 2> "$tmp/main.err"; then
+  if ! run_main; then
     cat -- "$tmp/main.out" "$tmp/main.err" >&2
     return 1
   fi
@@ -190,3 +205,17 @@ post_with_stub
 jq -e 'keys == ["body"] and (.body | startswith("**Verdict: FIX FIRST**"))' \
   "$tmp/fallback-payload.json" > /dev/null
 printf 'ok: failed review POST falls back to a plain comment\n'
+
+rm -f -- "$tmp/review-fails"
+touch -- "$tmp/no-verdict"
+if run_main; then
+  echo 'main succeeded on a marker comment without a Verdict line' >&2
+  exit 1
+fi
+if ! grep -q 'Verdict' "$tmp/main.err"; then
+  cat -- "$tmp/main.err" >&2
+  exit 1
+fi
+[ ! -e "$tmp/review-payload.json" ]
+[ ! -e "$tmp/fallback-payload.json" ]
+printf 'ok: marker comment without a Verdict line fails before posting\n'

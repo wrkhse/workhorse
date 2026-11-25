@@ -195,6 +195,11 @@ main() (
       | max_by(.id) | .body // ""
     ' > "$temp/comment"
 
+  if ! grep -q -- '^\*\*Verdict:' "$temp/comment"; then
+    echo 'ERROR: The opencode review comment has no "Verdict:" line, so the review is invalid.' >&2
+    exit 1
+  fi
+
   prepare_review "$temp/comment" "$DIFF" "$temp" > "$temp/payload.json"
   if ! jq -e 'has("comments")' "$temp/payload.json" > /dev/null; then
     echo 'WARNING: Inline review comments skipped: findings JSON was missing or malformed.' >&2
