@@ -36,6 +36,48 @@ write_capped() {
   fi
 }
 
+write_commit_digest() {
+  local sha="$1"
+  local -a show_opts=(--diff-merges=first-parent --no-ext-diff --no-textconv
+    --no-color --no-notes --no-show-signature)
+
+  git show "${show_opts[@]}" --format='commit %H %s' --name-only "$sha" |
+    awk 'NR == 1 { print; next } length($0) { print "file " $0 }'
+
+  git show "${show_opts[@]}" --format= --unified=0 --no-prefix "$sha" |
+    awk '
+      /^diff --git / { in_hunk = 0; next }
+      !in_hunk && /^--- / { old_path = substr($0, 5); sub(/\t$/, "", old_path); next }
+      !in_hunk && /^\+\+\+ / { new_path = substr($0, 5); sub(/\t$/, "", new_path); next }
+      /^@@ / {
+        old_line = substr($2, 2) + 0
+        new_line = substr($3, 2) + 0
+        in_hunk = 1
+        next
+      }
+      !in_hunk { next }
+      /^ / { old_line++; new_line++; next }
+      /^[+-]/ {
+        sign = substr($0, 1, 1)
+        text = substr($0, 2)
+        if (sign == "+") {
+          path = new_path
+          line = new_line++
+        } else {
+          path = old_path
+          line = old_line++
+        }
+
+        if (text ~ /#\[(allow|expect|ignore|test)|cfg\(not\(test\)\)|mutants::skip|mutants\.toml/ ||
+            text ~ /continue-on-error|\|\| true|set \+e|deny\.toml|clippy\.toml/ ||
+            text ~ /timeout-minutes|retry|permissions:|paths:|assert|skip/) {
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)
+          printf "%s %s:%d: %s\n", sign, path, line, text
+        }
+      }
+    '
+}
+
 git diff "$BASE...$HEAD" | write_capped "$OUT/diff.patch" "$MAX_BYTES" "$OUT/diff.patch"
 
 total=$(git rev-list --count "$BASE..$HEAD")
@@ -50,11 +92,12 @@ git rev-list --reverse "$BASE..$HEAD" | {
     n=$((n + 1))
     dest="$OUT/commits/$(printf '%03d' "$n")-$sha.patch"
     git show --stat --patch "$sha" | write_capped "$dest" "$MAX_BYTES" "$dest"
+    write_commit_digest "$sha"
   done
 
   # Keep rev-list from failing with SIGPIPE after the loop reaches the cap.
   cat > /dev/null
-}
+} | write_capped "$OUT/commits-digest.txt" 200000 "$OUT/commits-digest.txt"
 
 for f in AGENTS.md CONTRIBUTING.md; do
   if git cat-file -e "$BASE:$f" 2> /dev/null; then
