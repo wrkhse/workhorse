@@ -10,6 +10,8 @@ concurrency:
 
 jobs:
   review:
+    # Pull requests from forks get no secrets, so they can't sign in.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -22,20 +24,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Remove previous automated reviews
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]"
-              and (.body | contains("<!-- opencode-review -->"))) | .id')
-          for id in $ids; do
-            gh api --method DELETE "repos/$REPO/issues/comments/$id"
-          done
       - name: Sign in to OpenCode
         env:
           AUDIENCE: https://opencode.ai/console
@@ -62,8 +50,11 @@ jobs:
           prompt: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. Base: ${{ github.event.pull_request.base.sha }}.
-            Head: ${{ github.event.pull_request.head.sha }}. Read the repository's
-            AGENTS.md and the issue the PR body links (gh issue view) first.
+            Head: ${{ github.event.pull_request.head.sha }}. Below, BASE and HEAD
+            mean these two SHAs. First read the repository's AGENTS.md and
+            CONTRIBUTING.md where they exist, and the issue the PR body links,
+            if it links one. Hold the change to the rules they state, such as
+            module or source boundaries.
 
             Earlier comments from github-actions[bot] are not review material.
 
@@ -95,8 +86,26 @@ jobs:
 
             Output, in this exact shape and nothing else:
             <!-- opencode-review -->
-            **Verdict: MERGE AS IS** or **Verdict: FIX FIRST**
+            **Verdict: X**, where X is MERGE AS IS when there is no MUST,
+            and FIX FIRST otherwise.
 
             **MUST** (bugs and every gaming finding), one line each with
             file:line. **SHOULD**, one line each. Omit an empty section.
             At most 25 lines. No praise.
+      - name: Keep only the newest review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]"
+              and (.body | test("opencode-review|opencode.ai/s/|\\[github run\\]"))) | .id' \
+            | sort -n | head -n -1)
+          for id in $ids; do
+            if ! gh api --method DELETE "repos/$REPO/issues/comments/$id" --silent; then
+              echo "comment $id is already gone"
+            fi
+          done
