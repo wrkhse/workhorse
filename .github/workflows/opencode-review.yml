@@ -97,6 +97,7 @@ jobs:
           # reads files in the checkout: no shell, no edits, no web.
           OPENCODE_CONFIG_CONTENT: >-
             {"small_model":"opencode-go/deepseek-v4.1-flash",
+            "agents":{"build":{"steps":20}},
             "permission":{"read":"allow","bash":"deny","edit":"deny",
             "external_directory":"deny","webfetch":"deny","websearch":"deny",
             "question":"deny","doom_loop":"deny"}}
@@ -155,9 +156,12 @@ jobs:
             **MUST** (bugs and every gaming finding), one line each with
             file:line. **SHOULD**, one line each. Omit an empty section.
             At most 25 lines. No praise.
+
+            If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
         shell: bash
         run: opencode github run
       - name: Keep only the newest review
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -165,10 +169,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]"
-              and (.body | startswith("<!-- opencode-review -->"))) | .id' \
-            | sort -n | head -n -1)
+          ids=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments" \
+            | jq -r '
+              [.[][] | select(.user.login == "github-actions[bot]")] as $bot
+              | ($bot | map(select(.body | startswith("<!-- opencode-review -->")))
+                | max_by(.id) | .id) as $newest
+              | $bot[] | select(.id != $newest) | .id
+            ')
           for id in $ids; do
             if ! gh api --method DELETE "repos/$REPO/issues/comments/$id" \
               --silent 2> "$RUNNER_TEMP/err.txt"; then
