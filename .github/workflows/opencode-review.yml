@@ -69,7 +69,8 @@ jobs:
             "question":"deny","doom_loop":"deny",
             "bash":{"*":"deny","git log*":"allow","git show*":"allow",
             "git diff*":"allow","git status*":"allow","gh pr view*":"allow",
-            "gh pr diff*":"allow","gh issue view*":"allow"}}}
+            "gh pr diff*":"allow","gh issue view*":"allow",
+            "*--output*":"deny","*--no-index*":"deny","*>*":"deny"}}}
           PROMPT: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. Base: ${{ github.event.pull_request.base.sha }}.
