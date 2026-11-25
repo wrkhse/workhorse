@@ -140,6 +140,8 @@ case "$method $endpoint" in
       cat -- "$dir/issue-comments-malformed.json"
     elif [ -e "$dir/no-verdict" ]; then
       cat -- "$dir/issue-comments-no-verdict.json"
+    elif [ -e "$dir/stale-marker" ]; then
+      cat -- "$dir/issue-comments-stale-marker.json"
     else
       cat -- "$dir/issue-comments.json"
     fi
@@ -193,6 +195,13 @@ printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' "$summary" '' 
   '<!-- opencode-findings-json' '[broken' '-->' > "$tmp/marker-comment-malformed"
 jq -n --rawfile body "$tmp/marker-comment-malformed" \
   '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments-malformed.json"
+# The newest bot comment is a meta summary without the marker; the older marker comment
+# with a findings block is stale and must not become this run's review.
+meta='Meta summary: the review finished; nothing in this comment is a review.'
+jq -n --rawfile body "$tmp/marker-comment" --arg meta "$meta" '
+  [{id: 1, user: {login: "github-actions[bot]"}, body: $body},
+   {id: 2, user: {login: "github-actions[bot]"}, body: $meta}]
+' > "$tmp/issue-comments-stale-marker.json"
 
 # A fresh bash runs main through the script's own entrypoint: inside an if or ||
 # the caller's set -e is off, so calling main in-process would mask its failures.
@@ -250,3 +259,20 @@ fi
 [ ! -e "$tmp/review-payload.json" ]
 [ ! -e "$tmp/fallback-payload.json" ]
 printf 'ok: marker comment without a Verdict line fails before posting\n'
+
+rm -f -- "$tmp/no-verdict"
+touch -- "$tmp/stale-marker"
+if run_main; then
+  # A fallback is acceptable only when it is built from the newest comment alone.
+  assert_plain_fallback "$meta" < "$tmp/fallback-payload.json"
+  jq -e --arg summary "$summary" '
+    (.body | contains($summary) | not) and (.body | contains("Fix this.") | not)
+  ' "$tmp/fallback-payload.json" > /dev/null
+elif ! grep -q 'Verdict' "$tmp/main.err"; then
+  cat -- "$tmp/main.out" "$tmp/main.err" >&2
+  exit 1
+else
+  [ ! -e "$tmp/fallback-payload.json" ]
+fi
+[ ! -e "$tmp/review-payload.json" ]
+printf 'ok: newest non-marker bot comment never posts a review from an older marker comment\n'

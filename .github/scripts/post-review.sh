@@ -35,6 +35,11 @@ fallback_text() {
   '
 }
 
+# A comment is this workflow's review only when its body starts with the marker.
+has_marker() {
+  awk -v marker="$review_marker" 'NR == 1 { found = index($0, marker) == 1; exit } END { exit !found }' < "$1"
+}
+
 extract_findings() {
   awk '
     !started && /^<!-- opencode-findings-json[[:space:]]*$/ { started = 1; next }
@@ -92,7 +97,7 @@ prepare_review() {
   review_body "$comment" > "$work/body"
   fallback_text "$comment" > "$work/fallback-text"
 
-  if ! extract_findings "$comment" > "$work/findings.json" 2> /dev/null; then
+  if ! has_marker "$comment" || ! extract_findings "$comment" > "$work/findings.json" 2> /dev/null; then
     jq -n --rawfile text "$work/fallback-text" '
       {body: ($text + "\n\nInline comments were skipped because the findings JSON was malformed.")}
     '
@@ -240,12 +245,11 @@ main() (
   temp=$(mktemp -d "${out%/}/post-review.XXXXXX")
   trap 'rm -rf -- "$temp"' EXIT
 
+  # Only the newest bot comment is this run's output; an older review must never be reposted, so a
+  # newest comment without the marker or findings still goes through the fallbacks below.
   "${GH:-gh}" api "repos/$REPO/issues/$PR/comments" --paginate |
-    jq -sr --arg marker "$review_marker" '
-      map(.[] | select(
-        (.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]")
-        and (.body // "" | startswith($marker))
-      ))
+    jq -sr '
+      map(.[] | select(.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]"))
       | max_by(.id) | .body // ""
     ' > "$temp/comment"
 
