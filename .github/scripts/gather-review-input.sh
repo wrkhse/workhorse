@@ -14,6 +14,7 @@ if [[ ! "$MAX_BYTES" =~ ^[0-9]{1,18}$ || ! "$MAX_COMMITS" =~ ^[0-9]{1,18}$ ]]; t
   exit 1
 fi
 
+rm -rf -- "$OUT"
 mkdir -p -- "$OUT/commits" "$OUT/rules"
 notes="$OUT/NOTES.txt"
 : > "$notes"
@@ -22,6 +23,7 @@ write_capped() {
   local dest="$1" max="$2" label="$3"
   local tmp="$dest.tmp" size
   head -c "$((10#$max + 1))" > "$tmp"
+  # Drain to /dev/null to avoid SIGPIPE; the 30-minute review job timeout bounds both drains.
   cat > /dev/null
   size=$(wc -c < "$tmp")
 

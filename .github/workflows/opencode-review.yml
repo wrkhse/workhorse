@@ -161,7 +161,6 @@ jobs:
         shell: bash
         run: opencode github run
       - name: Keep only the newest review
-        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -169,13 +168,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ids=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments" \
-            | jq -r '
-              [.[][] | select(.user.login == "github-actions[bot]")] as $bot
-              | ($bot | map(select(.body | startswith("<!-- opencode-review -->")))
-                | max_by(.id) | .id) as $newest
-              | $bot[] | select(.id != $newest) | .id
-            ')
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]"
+              and (.body | startswith("<!-- opencode-review -->"))) | .id' \
+            | sort -n | head -n -1)
           for id in $ids; do
             if ! gh api --method DELETE "repos/$REPO/issues/comments/$id" \
               --silent 2> "$RUNNER_TEMP/err.txt"; then
