@@ -162,11 +162,11 @@ case "$method $endpoint" in
       *)
         printf '%s\n' '{"data":{"repository":{"pullRequest":{"reviews":{"nodes":[
           {"id":"PRR_old","author":{"login":"github-actions","__typename":"Bot"},"isMinimized":false,
-            "body":"<!-- opencode-review -->\n**Verdict: SHIP**"},
+            "body":"**Verdict: SHIP**\n\n<!-- opencode-review -->"},
           {"id":"PRR_unrelated","author":{"login":"github-actions","__typename":"Bot"},"isMinimized":false,
-            "body":"Another workflow review without the marker."},
+            "body":"**Verdict: SHIP**\n\nAnother workflow review without the marker."},
           {"id":"PRR_test","author":{"login":"github-actions","__typename":"Bot"},"isMinimized":false,
-            "body":"<!-- opencode-review -->\n**Verdict: FIX FIRST**"}
+            "body":"**Verdict: FIX FIRST**\n\n<!-- opencode-review -->"}
         ],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}'
         ;;
     esac
@@ -189,6 +189,7 @@ sed '/^\*\*Verdict:/d' "$tmp/marker-comment" > "$tmp/marker-comment-no-verdict"
 jq -n --rawfile body "$tmp/marker-comment-no-verdict" \
   '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments-no-verdict.json"
 printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' "$summary" '' \
+  '**MUST**' '- a.txt:2 Fix this.' '' \
   '<!-- opencode-findings-json' '[broken' '-->' > "$tmp/marker-comment-malformed"
 jq -n --rawfile body "$tmp/marker-comment-malformed" \
   '[{id: 1, user: {login: "github-actions[bot]"}, body: $body}]' > "$tmp/issue-comments-malformed.json"
@@ -212,27 +213,29 @@ post_with_stub
 jq -e --arg summary "$summary" '
   .event == "COMMENT"
   and (.body | startswith("**Verdict: FIX FIRST**"))
+  and (.body | endswith("\n<!-- opencode-review -->"))
   and (.body | contains($summary) | not)
   and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
 ' "$tmp/review-payload.json" > /dev/null
 [ ! -e "$tmp/fallback-payload.json" ]
 # Only the older marker-bearing bot review is minimized; PRR_unrelated has no marker.
 [ "$(cat -- "$tmp/minimized")" = PRR_old ]
-printf 'ok: stub gh review has verdict body and inline comments on diff lines only\n'
+printf 'ok: stub gh review has verdict body, closing marker and inline comments on diff lines only\n'
 printf 'ok: only the older marker-bearing bot review is minimized\n'
 
 touch -- "$tmp/review-fails"
 post_with_stub
-assert_plain_fallback '- a.txt:2 (MUST): Fix this.' '- a.txt:7 (SHOULD): Off the diff.' \
+assert_plain_fallback "$summary" '- a.txt:2 Fix this.' \
+  '- a.txt:2 (MUST): Fix this.' '- a.txt:7 (SHOULD): Off the diff.' \
   < "$tmp/fallback-payload.json"
-printf 'ok: failed review POST falls back to a plain marker comment with every finding\n'
+printf 'ok: failed review POST falls back to the full source review with every finding\n'
 
 rm -f -- "$tmp/review-fails"
 touch -- "$tmp/malformed"
 post_with_stub
-assert_plain_fallback < "$tmp/fallback-payload.json"
+assert_plain_fallback "$summary" '- a.txt:2 Fix this.' < "$tmp/fallback-payload.json"
 [ ! -e "$tmp/review-payload.json" ]
-printf 'ok: malformed findings JSON falls back to a plain marker comment\n'
+printf 'ok: malformed findings JSON falls back to the full source review\n'
 
 rm -f -- "$tmp/malformed"
 touch -- "$tmp/no-verdict"

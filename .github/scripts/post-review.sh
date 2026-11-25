@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Starts every comment this workflow manages: the review, and both fallbacks below.
+# Starts every comment this workflow manages (both fallbacks below) and ends every review it posts.
 review_marker='<!-- opencode-review -->'
 
 # The marker comment keeps the full review for workers; the review body repeats only its verdict.
@@ -11,6 +11,28 @@ review_body() {
     /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); printf "%s", $0; found = 1; exit }
     END { if (!found) printf "%s", "See the opencode review comment on this pull request for the full review." }
   ' < "$1"
+}
+
+# A fallback comment carries the marker, so the next "Keep only the newest review" step deletes the
+# source comment in its favour. It therefore keeps the source's whole human-readable part: every
+# line before the findings JSON, without the trailing run footer, under one marker and a verdict.
+fallback_text() {
+  awk '
+    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
+    { lines[++n] = $0 }
+    END {
+      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+      if (n > 0 && lines[n] ~ /^\[github run\]\(.*\)[[:space:]]*$/) n--
+      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+      for (i = 1; i <= n; i++) print lines[i]
+    }
+  ' < "$1" | jq -rjRs --arg marker "$review_marker" '
+    (if startswith($marker) then .[($marker | length):] | ltrimstr("\n") else . end
+      | rtrimstr("\n")) as $text
+    | (if $text | split("\n") | any(startswith("**Verdict:")) then ""
+      else "**Verdict: FIX FIRST**" end) as $verdict
+    | [$marker, $verdict, $text] | map(select(length > 0)) | join("\n")
+  '
 }
 
 extract_findings() {
@@ -68,11 +90,11 @@ prepare_review() {
   local comment="$1" diff="$2" work="$3"
 
   review_body "$comment" > "$work/body"
+  fallback_text "$comment" > "$work/fallback-text"
+
   if ! extract_findings "$comment" > "$work/findings.json" 2> /dev/null; then
-    jq -n --arg marker "$review_marker" --rawfile body "$work/body" '
-      ($body | if startswith("**Verdict:") then . else "**Verdict: FIX FIRST**" end) as $verdict
-      | {body: ($marker + "\n" + $verdict
-          + "\n\nInline comments were skipped because the findings JSON was malformed.")}
+    jq -n --rawfile text "$work/fallback-text" '
+      {body: ($text + "\n\nInline comments were skipped because the findings JSON was malformed.")}
     '
     return
   fi
@@ -113,7 +135,7 @@ minimize_old_reviews() {
         }
       }
     }
-  ' | jq -sr --arg newest "$newest" '
+  ' | jq -sr --arg newest "$newest" --arg marker "$review_marker" '
     if length == 0 then error("empty GraphQL response") else .[] end
     | if (.errors // [] | length) > 0 then error(.errors | tostring) else . end
     | .data.repository.pullRequest.reviews.nodes[]
@@ -122,8 +144,8 @@ minimize_old_reviews() {
         or (.author.__typename == "Bot"
           and (.author.login == "github-actions" or .author.login == "opencode-agent"))
       ))
-    # Reviews this script posts always carry a verdict line; other bot reviews are left alone.
-    | select(.body // "" | split("\n") | any(test("^\\*\\*Verdict:")))
+    # Reviews this script posts end with the marker line; other bot reviews are left alone.
+    | select(.body // "" | split("\n") | any(sub("\\s+$"; "") == $marker))
     | [.id, .isMinimized] | @tsv
   '); then
     echo 'WARNING: Could not list older bot reviews; skipping minimization.' >&2
@@ -162,23 +184,26 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# The fallback is a marker comment holding every finding: the review body (verdict and moved
-# findings) plus one bullet per inline comment, with its severity from the parsed findings.
+# The fallback is a marker comment holding the full review text and every finding: one bullet
+# per finding moved out of the review, then one per inline comment, each with its severity.
 review_fallback() {
-  local payload="$1" findings="$2"
+  local payload="$1" findings="$2" text="$3"
 
-  jq --arg marker "$review_marker" --slurpfile findings "$findings" '
-    (.comments | map(. as $c
-      | ($findings[0] | map(select(.path == $c.path and .line == $c.line
-          and .side == $c.side and .body == $c.body)) | first | .severity) as $severity
-      | "- \($c.path):\($c.line) (\($severity)): \($c.body)")) as $bullets
-    | {body: ([$marker + "\n" + .body, (
-        if $bullets == [] then ""
-        else "Inline placement failed, so these findings are listed here instead.\n\n"
-          + ($bullets | join("\n"))
-        end
-      )] | map(select(length > 0)) | join("\n\n"))}
-  ' "$payload"
+  jq -n --rawfile text "$text" --slurpfile payload "$payload" --slurpfile findings "$findings" '
+    def bullet: "- \(.path):\(.line) (\(.severity)): \(.body)";
+    def section($note; $bullets):
+      if $bullets == [] then "" else $note + "\n\n" + ($bullets | join("\n")) end;
+
+    $payload[0].comments as $comments
+    | ($findings[0] | map(. as $f | {finding: $f, inline: ($comments | any(.path == $f.path
+        and .line == $f.line and .side == $f.side and .body == $f.body))})) as $placed
+    | {body: ([$text,
+        section("Some findings were moved here because they could not be posted inline.";
+          $placed | map(select(.inline | not) | .finding | bullet)),
+        section("Inline placement failed, so these findings are listed here instead.";
+          $placed | map(select(.inline) | .finding | bullet))
+      ] | map(select(length > 0)) | join("\n\n"))}
+  '
 }
 
 # Never fails silently: a rejected review falls back to one marker comment with every finding.
@@ -186,10 +211,14 @@ post_review() {
   local payload="$1" work="$2"
   local newest
 
-  if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" --input "$payload" \
-    > "$work/review.json"; then
+  # The review ends with the marker line (its verdict stays first) so minimize_old_reviews can tell
+  # this workflow's reviews from other bot reviews.
+  jq --arg marker "$review_marker" '.body += "\n\n" + $marker' "$payload" > "$work/review-payload.json"
+
+  if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" \
+    --input "$work/review-payload.json" > "$work/review.json"; then
     echo 'WARNING: Could not post the review; posting its findings as a plain comment instead.' >&2
-    review_fallback "$payload" "$work/findings.json" > "$work/fallback.json"
+    review_fallback "$payload" "$work/findings.json" "$work/fallback-text" > "$work/fallback.json"
     "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$work/fallback.json" --silent
     return 0
   fi
