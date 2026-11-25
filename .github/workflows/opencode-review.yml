@@ -131,14 +131,16 @@ jobs:
                issue asks for that is missing.
                docs this change makes untrue: a README, slice page, help text or example that no longer matches the code, unless the same PR updates it.
 
-            2. Gaming the checks (every file in commits/). Flag a commit that
+            2. Gaming the checks. Flag a commit that
                makes a check pass without fixing the cause only if its effect
                remains at the PR head, including when a later commit only hides
                it by renaming, moving, or re-applying it elsewhere. Omit any
                suppression or weakening that a later commit fully removes.
-               Read commits/ only to look for these patterns and check whether
-               their effect remains at the head; do not re-review every commit
-               in full. Look for:
+               Read diff.patch and review-input/commits-digest.txt by default.
+               The digest lists each commit's touched files and added or removed
+               lines matching gaming patterns, with per-commit attribution.
+               Open a full commit patch from commits/ only when a digest line
+               needs context; do not re-review every commit in full. Look for:
                - new #[allow], #[expect], #[ignore], cfg(not(test)), clippy or
                  rustc lint relaxations, eslint or ts-ignore comments;
                - new mutants exclusions (.cargo/mutants.toml, #[mutants::skip]),
@@ -185,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$PROMPT" \
-            | opencode run --model "$MODEL" --format json \
+            | opencode run --model "$MODEL" --variant low --format json \
             > "$RUNNER_TEMP/review-events.jsonl"
       # Posts the marker comment and inline review, then removes or
       # minimizes earlier ones.

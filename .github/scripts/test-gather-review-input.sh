@@ -111,4 +111,14 @@ BASE="$head" HEAD="$clean_head" PR_JSON="$tmp/pr.json" REPO=o/r GH="$tmp/gh" \
 grep -Fxq -- '+#[allow(dead_code)]' "$out/commits/001-$suppression_commit.patch"
 grep -Fxq -- '-#[allow(dead_code)]' "$out/commits/002-$clean_head.patch"
 [ "$(git show "$clean_head:fixture.rs")" = 'pub fn fixture() {}' ]
+
+digest="$out/commits-digest.txt"
+[ -f "$digest" ]
+[ "$(cat -- "$digest")" = "commit $suppression_commit Add lint suppression
+file fixture.rs
++ fixture.rs:1: #[allow(dead_code)]
+commit $clean_head Remove lint suppression
+file fixture.rs
+- fixture.rs:1: #[allow(dead_code)]" ]
+
 printf 'ok: fixed-later\n'
