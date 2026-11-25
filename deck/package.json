@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@slidev/cli": "53.1.0",
+    "@slidev/parser": "53.1.0",
     "@slidev/theme-default": "0.25.0"
   }
 }
