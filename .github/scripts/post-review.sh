@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Starts every comment this workflow manages: the review, and both fallbacks below.
+review_marker='<!-- opencode-review -->'
+
 # The marker comment keeps the full review for workers; the review body repeats only its verdict.
 review_body() {
   awk '
@@ -66,9 +69,10 @@ prepare_review() {
 
   review_body "$comment" > "$work/body"
   if ! extract_findings "$comment" > "$work/findings.json" 2> /dev/null; then
-    jq -n --rawfile body "$work/body" '
-      {body: ([$body, "Inline comments were skipped because the findings JSON was malformed."]
-        | map(select(length > 0)) | join("\n\n"))}
+    jq -n --arg marker "$review_marker" --rawfile body "$work/body" '
+      ($body | if startswith("**Verdict:") then . else "**Verdict: FIX FIRST**" end) as $verdict
+      | {body: ($marker + "\n" + $verdict
+          + "\n\nInline comments were skipped because the findings JSON was malformed.")}
     '
     return
   fi
@@ -103,7 +107,7 @@ minimize_old_reviews() {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $pr) {
           reviews(first: 100, after: $endCursor) {
-            nodes { id author { login __typename } isMinimized }
+            nodes { id author { login __typename } body isMinimized }
             pageInfo { hasNextPage endCursor }
           }
         }
@@ -118,6 +122,8 @@ minimize_old_reviews() {
         or (.author.__typename == "Bot"
           and (.author.login == "github-actions" or .author.login == "opencode-agent"))
       ))
+    # Reviews this script posts always carry a verdict line; other bot reviews are left alone.
+    | select(.body // "" | split("\n") | any(test("^\\*\\*Verdict:")))
     | [.id, .isMinimized] | @tsv
   '); then
     echo 'WARNING: Could not list older bot reviews; skipping minimization.' >&2
@@ -156,15 +162,34 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# Never fails silently: a rejected review falls back to one plain comment with its body.
+# The fallback is a marker comment holding every finding: the review body (verdict and moved
+# findings) plus one bullet per inline comment, with its severity from the parsed findings.
+review_fallback() {
+  local payload="$1" findings="$2"
+
+  jq --arg marker "$review_marker" --slurpfile findings "$findings" '
+    (.comments | map(. as $c
+      | ($findings[0] | map(select(.path == $c.path and .line == $c.line
+          and .side == $c.side and .body == $c.body)) | first | .severity) as $severity
+      | "- \($c.path):\($c.line) (\($severity)): \($c.body)")) as $bullets
+    | {body: ([$marker + "\n" + .body, (
+        if $bullets == [] then ""
+        else "Inline placement failed, so these findings are listed here instead.\n\n"
+          + ($bullets | join("\n"))
+        end
+      )] | map(select(length > 0)) | join("\n\n"))}
+  ' "$payload"
+}
+
+# Never fails silently: a rejected review falls back to one marker comment with every finding.
 post_review() {
   local payload="$1" work="$2"
   local newest
 
   if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" --input "$payload" \
     > "$work/review.json"; then
-    echo 'WARNING: Could not post the review; posting its body as a plain comment instead.' >&2
-    jq '{body: (.body + "\n\nInline comments could not be posted.")}' "$payload" > "$work/fallback.json"
+    echo 'WARNING: Could not post the review; posting its findings as a plain comment instead.' >&2
+    review_fallback "$payload" "$work/findings.json" > "$work/fallback.json"
     "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$work/fallback.json" --silent
     return 0
   fi
@@ -187,10 +212,10 @@ main() (
   trap 'rm -rf -- "$temp"' EXIT
 
   "${GH:-gh}" api "repos/$REPO/issues/$PR/comments" --paginate |
-    jq -sr '
+    jq -sr --arg marker "$review_marker" '
       map(.[] | select(
         (.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]")
-        and (.body // "" | startswith("<!-- opencode-review -->"))
+        and (.body // "" | startswith($marker))
       ))
       | max_by(.id) | .body // ""
     ' > "$temp/comment"

@@ -180,6 +180,7 @@ jobs:
             -->
 
             If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
+            After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the verdict line and the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
         shell: bash
         run: opencode github run
       - name: Post inline review
