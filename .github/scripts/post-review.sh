@@ -35,9 +35,10 @@ fallback_text() {
   '
 }
 
-# A comment is this workflow's review only when its body starts with the marker.
+# A comment is this workflow's review only when its body holds the marker; the model may put a
+# paragraph before it, so the marker can sit on any line.
 has_marker() {
-  awk -v marker="$review_marker" 'NR == 1 { found = index($0, marker) == 1; exit } END { exit !found }' < "$1"
+  grep -qF -- "$review_marker" "$1"
 }
 
 extract_findings() {
