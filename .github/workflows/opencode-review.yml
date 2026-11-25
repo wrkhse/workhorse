@@ -87,9 +87,8 @@ jobs:
             fi
           done
           gh pr view "$PR" -R "$REPO" --json title,body | cap > "$out/pr.json"
-          issue=$(jq -r '.body // ""' "$out/pr.json" \
-            | grep -oE '(#|issues/)[0-9]+' | head -n 1 | grep -oE '[0-9]+$' \
-            | head -n 1)
+          issue=$(jq -r '[(.body // "") | match("(?:#|issues/)([0-9]+)"; "g")
+            | .captures[0].string][0] // ""' "$out/pr.json")
           if [ -n "$issue" ]; then
             if ! gh issue view "$issue" -R "$REPO" --json title,body \
               2> "$RUNNER_TEMP/issue-err.txt" | cap > "$out/issue.json"; then
