@@ -22,6 +22,9 @@ jobs:
       - name: Test review gathering on fixtures
         shell: bash
         run: bash .github/scripts/test-gather-review-input.sh
+      - name: Test review comment posting on fixtures
+        shell: bash
+        run: bash .github/scripts/test-review-post.sh
 
   review:
     # Pull requests from forks get no secrets, so they can't sign in.
@@ -128,9 +131,12 @@ jobs:
                issue asks for that is missing.
                docs this change makes untrue: a README, slice page, help text or example that no longer matches the code, unless the same PR updates it.
 
-            2. Gaming the checks (every file in commits/). Flag any commit that
-               makes a check pass without fixing the cause, even when a later
-               commit hides it:
+            2. Gaming the checks (every file in commits/). Flag a commit that
+               makes a check pass without fixing the cause only if its effect
+               remains at the PR head, including when a later commit only hides
+               it by renaming, moving, or re-applying it elsewhere. Omit any
+               suppression or weakening that a later commit fully removes.
+               Look for:
                - new #[allow], #[expect], #[ignore], cfg(not(test)), clippy or
                  rustc lint relaxations, eslint or ts-ignore comments;
                - new mutants exclusions (.cargo/mutants.toml, #[mutants::skip]),
@@ -152,14 +158,34 @@ jobs:
             <!-- opencode-review -->
             **Verdict: X**, where X is MERGE AS IS when there is no MUST,
             and FIX FIRST otherwise.
+            Then give a short summary.
 
-            **MUST** (bugs and every gaming finding), one line each with
-            file:line. **SHOULD**, one line each. Omit an empty section.
-            At most 25 lines. No praise.
+            List findings as one-line bullets with file:line under **MUST**
+            (bugs and every gaming finding) or **SHOULD**. Omit an empty section.
+            The human-readable part is at most 25 lines. No praise.
+
+            At the very end of the reply, append a JSON array in an HTML comment
+            on three lines exactly as shown, without a code fence. Use at most 30
+            findings, or [] if none can be placed on the diff. The path is relative
+            to the repo root and line is the new-file line number shown on the
+            RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
+            SHOULD. The commit is optional; body is at most 1500 characters.
+            Findings outside the diff still belong in the bullets, not the array.
+            <!-- opencode-findings-json
+            [{"path":"...","line":12,"side":"RIGHT","severity":"MUST","commit":"abc1234","body":"..."}]
+            -->
 
             If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
         shell: bash
         run: opencode github run
+      - name: Post inline review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DIFF: review-input/diff.patch
+        shell: bash
+        run: bash .github/scripts/post-review.sh
       - name: Keep only the newest review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

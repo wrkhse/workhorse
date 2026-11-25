@@ -91,3 +91,24 @@ Mentions #999999 and https://github.com/other/other/issues/42. Part of #7.'
 run_case missing 'Closes #999999'
 run_case no-link 'See #1234 and https://other/repo/issues/9'
 run_case url-link 'Related: /o/r/issues/7'
+
+# Keep these commits outside the capped history used by the four cases above.
+printf '%s\n' '#[allow(dead_code)]' 'pub fn fixture() {}' > fixture.rs
+git add fixture.rs
+git commit -qm 'Add lint suppression'
+suppression_commit=$(git rev-parse HEAD)
+
+printf '%s\n' 'pub fn fixture() {}' > fixture.rs
+git add fixture.rs
+git commit -qm 'Remove lint suppression'
+clean_head=$(git rev-parse HEAD)
+
+out="$tmp/fixed-later"
+jq -n '{title:"Fixture",body:""}' > "$tmp/pr.json"
+BASE="$head" HEAD="$clean_head" PR_JSON="$tmp/pr.json" REPO=o/r GH="$tmp/gh" \
+  OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
+
+grep -Fxq -- '+#[allow(dead_code)]' "$out/commits/001-$suppression_commit.patch"
+grep -Fxq -- '-#[allow(dead_code)]' "$out/commits/002-$clean_head.patch"
+[ "$(git show "$clean_head:fixture.rs")" = 'pub fn fixture() {}' ]
+printf 'ok: fixed-later\n'
