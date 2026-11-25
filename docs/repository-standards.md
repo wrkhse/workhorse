@@ -113,9 +113,10 @@ outcomes, one unchecked `- [ ]` item per outcome. A finished project has none.
 
 ## Code examples stay true
 
-Every code example is truthful and formatted. A formatting problem a tool can
-fix is fixed by the tool, and is never a failing gate. The checks run after the
-fix.
+Every code example is truthful and formatted. A formatting problem in an
+example is fixed by its tool before the checks run, not reported as a content
+error. Repository files are different: the `format` check fails when a tracked
+file is unformatted.
 
 ```mermaid
 flowchart LR
