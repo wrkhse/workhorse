@@ -112,18 +112,57 @@ jobs:
           tidy check --skip-unknown "${files[@]}"
           status=$?
           set -e
-          case "$status" in
-            0) ;;
-            1)
-              echo "::error::tidy found unformatted files (listed above); run tidy up on the named paths"
-              exit 1
-              ;;
-            2)
-              echo "::error::tidy hit a parse or config error (reported above)"
-              exit 2
-              ;;
-            *)
-              echo "::error::tidy check exited with unexpected status $status"
-              exit "$status"
-              ;;
-          esac
+          bash .github/scripts/check-tidy-status.sh "$status"
+
+  # Proves the format job's exit-2 path on every run: tidy check must exit
+  # exactly 2 on a tidy.json it cannot parse, and check-tidy-status.sh must name
+  # that status as a parse or config error. It works in a scratch folder
+  # outside the checkout.
+  format-exit2-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tidy v2.0.0
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o tidy.tar.gz \
+            https://github.com/lukeed/tidy/releases/download/v2.0.0/tidy-x86_64-unknown-linux-musl.tar.gz
+          echo "4b8166b1cdde610fd783f2d59511b0fb35d15ef96069ef20642b948ab90907ea  tidy.tar.gz" \
+            | sha256sum -c -
+          mkdir tidy-bin
+          tar -xzf tidy.tar.gz -C tidy-bin tidy
+          echo "$RUNNER_TEMP/tidy-bin" >> "$GITHUB_PATH"
+      - name: tidy check exits 2 on an unparsable tidy.json
+        run: |
+          proof="$RUNNER_TEMP/tidy-parse-error"
+          mkdir "$proof"
+          printf '{ not json\n' > "$proof/tidy.json"
+          printf '{ "a": 1 }\n' > "$proof/sample.json"
+          cd "$proof"
+          set +e
+          tidy check .
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "::error::tidy check exited $status on an unparsable tidy.json; expected 2"
+            exit 1
+          fi
+
+          # The format job's own handler must name exit 2. Its output goes to a
+          # file, so the expected ::error:: line is checked, not annotated.
+          report="$RUNNER_TEMP/tidy-status-report.txt"
+          if ! EXPECT_STATUS=2 bash "$GITHUB_WORKSPACE/.github/scripts/check-tidy-status.sh" "$status" > "$report"; then
+            cat "$report"
+            echo "::error::check-tidy-status.sh did not accept exit 2"
+            exit 1
+          fi
+          if ! grep -Fxq '::error::tidy hit a parse or config error (reported above)' "$report"; then
+            echo "::error::check-tidy-status.sh did not name exit 2 as a parse or config error"
+            exit 1
+          fi
+          echo "tidy check exited 2 on an unparsable tidy.json, and the format job's handler named it a parse or config error"
