@@ -6,20 +6,22 @@ set -euo pipefail
 # - one COMMENT pull request review that ends with the marker and carries the findings inline.
 #
 # Inputs (environment): REPO (owner/name), PR, GH_TOKEN, DIFF (the PR's unified diff), EVENTS
-# (JSONL events), optional OUT (scratch directory) and GH (gh binary). A reply without a verdict
-# or a valid findings block fails before anything is posted.
+# (JSONL events), optional OUT (scratch directory), GH (gh binary) and OPENCODE (opencode binary).
+# A malformed reply can get one repair turn in the same session. The turn needs MODEL and inherits
+# OPENCODE_CONFIG_CONTENT and OPENCODE_API_KEY from the workflow.
 
 review_marker='<!-- opencode-review -->'
 
 # Logs the stream before reply validation, which still owns reporting malformed input.
 events_summary() {
-  local events="$1"
+  local events="$1" attempts="$2"
 
-  jq -sr '
+  jq -sr --argjson attempts "$attempts" '
     (group_by(.type // "unknown") | map({key: (.[0].type // "unknown"), value: length})
       | from_entries) as $types
     | (map(select(.type == "step_finish")) | last | .part) as $finish
     | {
+        attempts: $attempts,
         total: length,
         types: $types,
         text_events: ($types.text // 0),
@@ -33,7 +35,7 @@ events_summary() {
         }
       }
     | "Review events: \(tojson)"
-  ' "$events" 2> /dev/null || printf 'Review events: unknown\n'
+  ' "$events" 2> /dev/null || printf 'Review events: {"attempts":%s,"summary":"unknown"}\n' "$attempts"
 }
 
 # Prints the last text part of the event stream. An error event means the run failed, so its
@@ -75,10 +77,25 @@ events_diagnostics() {
   tail -n 5 -- "$events" | cut -c 1-400
 }
 
+# The initial reply puts the marker comment first; the repair prompt asks for the JSON block first.
+reply_comment_text() {
+  awk '
+    !comment && !in_findings && /^[[:space:]]*$/ { next }
+    !in_findings && /^<!-- opencode-findings-json[[:space:]]*$/ {
+      if (comment || after_findings) exit
+      in_findings = 1
+      next
+    }
+    in_findings && /^-->[[:space:]]*$/ { in_findings = 0; after_findings = 1; next }
+    in_findings { next }
+    { comment = 1; print }
+  ' < "$1"
+}
+
 verdict_line() {
   awk '
-    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
-    /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); print; found = 1; exit }
+    NR == 2 && /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); print; found = 1 }
+    NR == 2 { exit }
     END { exit !found }
   ' < "$1"
 }
@@ -118,13 +135,12 @@ validate_findings() {
   '
 }
 
-# The comment keeps the reply before the findings block, without a trailing run-link footer,
-# under exactly one marker line and the verdict line.
+# Keeps the human-readable portion, without a trailing run-link footer, under exactly one marker
+# line and the verdict line.
 marker_comment() {
   MARKER="$review_marker" VERDICT="$2" awk '
     function blank(s) { return s ~ /^[[:space:]]*$/ }
 
-    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
     { line = $0; sub(/[[:space:]]+$/, "", line) }
     line == ENVIRON["MARKER"] { next }
     !verdict_seen && line == ENVIRON["VERDICT"] { verdict_seen = 1; next }
@@ -246,8 +262,8 @@ delete_older_comments() {
       | select(.body // "" | startswith($marker))
       | .id
     '); then
-    echo 'ERROR: Could not list older review comments.' >&2
-    return 1
+    echo 'WARNING: Could not list older review comments; skipping deletion.' >&2
+    return 0
   fi
 
   for id in $ids; do
@@ -256,9 +272,8 @@ delete_older_comments() {
     elif grep -q 'HTTP 404' "$err"; then
       printf 'Review comment %s is already gone.\n' "$id"
     else
-      printf 'ERROR: Could not delete review comment %s.\n' "$id" >&2
-      cat -- "$err" >&2
-      return 1
+      printf 'WARNING: Could not delete review comment %s.\n' "$id" >&2
+      cat -- "$err" >&2 || true
     fi
   done
 }
@@ -333,20 +348,17 @@ minimize_old_reviews() {
     elif grep -qiE 'HTTP 404|already[- ]minimized|could not resolve to a node with the global id' "$err"; then
       printf 'Review %s is gone or already minimized.\n' "$id"
     else
-      printf 'WARNING: Could not minimize review %s; stopping minimization.\n' "$id" >&2
-      cat -- "$err" >&2
-      return 0
+      printf 'WARNING: Could not minimize review %s.\n' "$id" >&2
+      cat -- "$err" >&2 || true
     fi
   done <<< "$reviews"
 }
 
-# Validates the whole reply before posting anything, so a bad reply fails with nothing on the PR.
-prepare() {
-  local events="$1" diff="$2" work="$3"
-  local verdict
+# Returns 1 for repairable reply content, 2 when the event stream itself failed.
+validate_reply() {
+  local events="$1" work="$2" marker
 
-  events_summary "$events"
-  reply_text "$events" > "$work/reply"
+  reply_text "$events" > "$work/reply" || return 2
 
   if ! grep -q '[^[:space:]]' "$work/reply"; then
     events_diagnostics "$events" >&2 || true
@@ -354,8 +366,14 @@ prepare() {
     return 1
   fi
 
-  if ! verdict=$(verdict_line "$work/reply"); then
+  reply_comment_text "$work/reply" > "$work/comment" || return 2
+
+  if ! verdict_line "$work/comment" > "$work/verdict"; then
     echo 'ERROR: review reply has no Verdict line' >&2
+    return 1
+  fi
+  if ! IFS= read -r marker < "$work/comment" || [ "$marker" != "$review_marker" ]; then
+    echo 'ERROR: review reply has no marker comment before the Verdict line' >&2
     return 1
   fi
 
@@ -368,8 +386,54 @@ prepare() {
     printf 'ERROR: review findings JSON is invalid: %s\n' "$(cat -- "$work/findings.err")" >&2
     return 1
   fi
+}
 
-  marker_comment "$work/reply" "$verdict" | jq -Rs '{body: rtrimstr("\n")}' > "$work/comment.json"
+repair_reply() {
+  local events="$1" repair_events="$2" sessionID status=0
+  local OPENCODE="${OPENCODE:-opencode}"
+
+  sessionID=$(jq -sr 'map(.sessionID | strings | select(length > 0)) | first // ""' "$events") || return 1
+  if [ -z "$sessionID" ]; then
+    echo 'ERROR: Cannot repair review reply without an opencode sessionID.' >&2
+    return 1
+  fi
+  if [ -z "${MODEL:-}" ]; then
+    echo 'ERROR: MODEL is required to repair the review reply.' >&2
+    return 1
+  fi
+
+  (
+    # Keep the write credential in the posting process, not the resumed reviewer.
+    unset GH_TOKEN
+    "$OPENCODE" run --model "$MODEL" --variant low --format json --session "$sessionID" \
+      'Reply now with only the required output: the findings JSON block, then the marker comment with the verdict line. No other text.' > "$repair_events"
+  ) || status=$?
+  events_summary "$repair_events" 2
+
+  if [ "$status" -ne 0 ]; then
+    printf 'ERROR: opencode repair exited with status %s.\n' "$status" >&2
+    return 1
+  fi
+}
+
+# Validates before posting; only an invalid reply from the first turn can trigger a repair.
+prepare() {
+  local events="$1" diff="$2" work="$3" repair_events="$4"
+  local status=0 verdict
+
+  events_summary "$events" 1
+  validate_reply "$events" "$work" || status=$?
+  case "$status" in
+    0) ;;
+    1)
+      repair_reply "$events" "$repair_events" || return 1
+      validate_reply "$repair_events" "$work" || return 1
+      ;;
+    *) return 1 ;;
+  esac
+
+  IFS= read -r verdict < "$work/verdict"
+  marker_comment "$work/comment" "$verdict" | jq -Rs '{body: rtrimstr("\n")}' > "$work/comment.json"
   right_lines "$diff" > "$work/right-lines"
   review_payload "$verdict" "$work/findings.json" "$work/right-lines" > "$work/review.json"
 }
@@ -383,14 +447,15 @@ main() (
   temp=$(mktemp -d "${out%/}/post-review.XXXXXX")
   trap 'rm -rf -- "$temp"' EXIT
 
-  prepare "$EVENTS" "$DIFF" "$temp"
+  prepare "$EVENTS" "$DIFF" "$temp" "${out%/}/review-repair.jsonl"
 
   comment_id=$(post_marker_comment "$temp/comment.json" "$temp/comment-response.json")
   printf 'Posted review comment %s.\n' "$comment_id"
-  delete_older_comments "$comment_id" "$temp/delete.err"
 
   review_id=$(post_review "$temp/review.json" "$temp/review-response.json")
   printf 'Posted review %s.\n' "$review_id"
+
+  delete_older_comments "$comment_id" "$temp/delete.err"
   minimize_old_reviews "$review_id" "$temp/minimize.err"
 )
 

@@ -31,6 +31,15 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Nobody answers prompts in CI, so nothing may ask. The reviewer only
+      # reads files in the checkout: no shell, no edits, no web.
+      OPENCODE_CONFIG_CONTENT: >-
+        {"small_model":"opencode-go/deepseek-v4.1-flash",
+        "agents":{"build":{"steps":150}},
+        "permission":{"read":"allow","bash":"deny","edit":"deny",
+        "external_directory":"deny","webfetch":"deny","websearch":"deny",
+        "question":"deny","doom_loop":"deny","grep":"deny","glob":"deny"}}
     permissions:
       id-token: write
       contents: read
@@ -96,14 +105,6 @@ jobs:
       - name: Review
         env:
           MODEL: opencode-go/deepseek-v4.1-flash
-          # Nobody answers prompts in CI, so nothing may ask. The reviewer only
-          # reads files in the checkout: no shell, no edits, no web.
-          OPENCODE_CONFIG_CONTENT: >-
-            {"small_model":"opencode-go/deepseek-v4.1-flash",
-            "agents":{"build":{"steps":150}},
-            "permission":{"read":"allow","bash":"deny","edit":"deny",
-            "external_directory":"deny","webfetch":"deny","websearch":"deny",
-            "question":"deny","doom_loop":"deny","grep":"deny","glob":"deny"}}
           PROMPT: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. You have no shell. Everything you need is in
@@ -197,6 +198,7 @@ jobs:
       # minimizes earlier ones.
       - name: Post review
         env:
+          MODEL: opencode-go/deepseek-v4.1-flash
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}

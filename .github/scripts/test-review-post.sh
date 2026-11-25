@@ -6,6 +6,7 @@ set -euo pipefail
 script="$(dirname -- "${BASH_SOURCE[0]}")/post-review.sh"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/test-review-post.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
+FAIL_DELETE=0
 
 # New-file lines 1 (context), 2 (added) and 3 (context) are in the hunk; old line 2 is deleted.
 cat > "$tmp/diff.patch" <<'DIFF'
@@ -19,8 +20,8 @@ diff --git a/a.txt b/a.txt
  tail
 DIFF
 
-# gh defaults to POST when a body or field is given, as the real one does. Each write
-# lands in $dir/writes and each POST body is kept beside the stub for the assertions.
+# gh defaults to POST when a body or field is given, as the real one does. Each POST
+# lands in $dir/writes and each body is kept beside the stub for the assertions.
 cat > "$tmp/gh" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -56,7 +57,18 @@ case "$method $endpoint" in
     cp -- "$input" "$dir/review-payload.json"
     printf '%s\n' '{"node_id":"PRR_test"}'
     ;;
-  'GET repos/'*'/issues/'*'/comments') printf '[]\n' ;;
+  'GET repos/'*'/issues/'*'/comments')
+    if [ "${FAIL_DELETE:-0}" = 1 ]; then
+      printf '%s\n' '[{"id":122,"user":{"login":"github-actions[bot]"},"body":"<!-- opencode-review -->"}]'
+    else
+      printf '[]\n'
+    fi
+    ;;
+  'DELETE repos/'*'/issues/comments/'*)
+    printf 'DELETE %s\n' "$endpoint" >> "$dir/cleanup-attempts"
+    echo 'stub gh: simulated DELETE failure' >&2
+    exit 1
+    ;;
   *' graphql')
     case "$query" in
       *mutation*)
@@ -75,6 +87,26 @@ case "$method $endpoint" in
 esac
 STUB
 chmod +x "$tmp/gh"
+
+# The first call seeds EVENTS; only the second may emit the repaired reply.
+cat > "$tmp/opencode" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+dir=$(dirname -- "$0")
+
+if [ ! -f "$dir/invalid-events.jsonl" ]; then
+  echo 'stub opencode: unexpected invocation without a fixture' >&2
+  exit 2
+fi
+
+jq -cn --args '$ARGS.positional' -- "$@" >> "$dir/opencode-calls.jsonl"
+case "$(awk 'END { print NR }' "$dir/opencode-calls.jsonl")" in
+  1) cat -- "$dir/invalid-events.jsonl" ;;
+  2) cat -- "$dir/valid-events.jsonl" ;;
+  *) echo 'stub opencode: unexpected extra invocation' >&2; exit 2 ;;
+esac
+STUB
+chmod +x "$tmp/opencode"
 
 # A reviewer reply: the marker, an optional verdict line, a summary, bullets and the findings block.
 reply() {
@@ -103,20 +135,22 @@ write_events() {
 }
 
 run_main() {
-  rm -f -- "$tmp/writes" "$tmp/comment-payload.json" "$tmp/review-payload.json"
-  GH="$tmp/gh" REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" \
+  rm -f -- "$tmp/writes" "$tmp/comment-payload.json" "$tmp/review-payload.json" "$tmp/cleanup-attempts"
+
+  GH="$tmp/gh" OPENCODE="$tmp/opencode" MODEL="${1:-}" FAIL_DELETE="$FAIL_DELETE" \
+    REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" \
     EVENTS="$tmp/events.jsonl" OUT="$tmp/out" bash "$script" > "$tmp/main.out" 2> "$tmp/main.err"
 }
 
 expect_posted() {
-  if ! run_main; then
+  if ! run_main "$@"; then
     cat -- "$tmp/main.out" "$tmp/main.err" >&2
     return 1
   fi
 
   printf '%s\n' 'POST repos/owner/repo/issues/7/comments' 'POST repos/owner/repo/pulls/7/reviews' \
     > "$tmp/expected-writes"
-  sort -- "$tmp/writes" | diff -u -- "$tmp/expected-writes" -
+  diff -u -- "$tmp/expected-writes" "$tmp/writes"
 }
 
 # A rejected stream exits non-zero, names the reason on stderr when one is given, and writes nothing.
@@ -181,3 +215,36 @@ write_events "$(reply '**Verdict: FIX FIRST**' "$findings")" \
   '{"type":"error","timestamp":3,"sessionID":"ses_test","error":{"name":"APIError","data":{"message":"provider overloaded"}}}'
 expect_rejected ''
 printf 'ok: an error event fails without posting\n'
+
+repair_model=fixture/reviewer
+write_events "$(reply '**Verdict: FIX FIRST**' '[{"path":"a.txt","line":')"
+mv -- "$tmp/events.jsonl" "$tmp/invalid-events.jsonl"
+write_events "$(reply '**Verdict: FIX FIRST**' \
+  '[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."}]')"
+mv -- "$tmp/events.jsonl" "$tmp/valid-events.jsonl"
+"$tmp/opencode" run --model "$repair_model" --variant low --format json 'Initial review.' > "$tmp/events.jsonl"
+
+expect_posted "$repair_model"
+[ ! -e "$tmp/cleanup-attempts" ]
+jq -se --arg model "$repair_model" '
+  length == 2
+  and .[0] == ["run", "--model", $model, "--variant", "low", "--format", "json", "Initial review."]
+  and (.[1] | length == 10
+    and .[:9] == ["run", "--model", $model, "--variant", "low", "--format", "json", "--session", "ses_test"]
+    and (.[9] | test("[^[:space:]]")))
+' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -e '
+  .body == "<!-- opencode-review -->\n**Verdict: FIX FIRST**\nReview summary.\n\n**MUST**\n- a.txt:2 Fix this."
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+sed -n 's/^Review events: //p' "$tmp/main.out" "$tmp/main.err" |
+  jq -se 'last | .attempts == 2' > /dev/null
+printf 'ok: invalid, then valid on repair, with both payloads posted\n'
+
+write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
+FAIL_DELETE=1 expect_posted
+printf 'DELETE repos/owner/repo/issues/comments/122\n' |
+  diff -u -- - "$tmp/cleanup-attempts"
+printf 'ok: a failed cleanup DELETE does not prevent either post or fail the run\n'
