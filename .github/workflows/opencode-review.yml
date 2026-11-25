@@ -47,8 +47,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL -o opencode.tgz \
-            https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-x64.tar.gz
+          base=https://github.com/anomalyco/opencode/releases/download
+          curl -fsSL -o opencode.tgz "$base/v1.19.6/opencode-linux-x64.tar.gz"
           echo "$SHA256  opencode.tgz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/opencode"
           tar -xzf opencode.tgz -C "$RUNNER_TEMP/opencode" opencode
@@ -59,13 +59,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USE_GITHUB_TOKEN: "true"
           MODEL: opencode-go/deepseek-v4.1-flash
-          # Nobody answers prompts in CI, so nothing may ask. The reviewer only
-          # reads: edits, web fetches, questions and paths outside the checkout
-          # are denied.
+          # Nobody answers prompts in CI, so nothing may ask, and the reviewer
+          # only reads. Shell is limited to read-only git and gh commands, so it
+          # can't edit files, commit or reach the network.
           OPENCODE_CONFIG_CONTENT: >-
             {"small_model":"opencode-go/deepseek-v4.1-flash",
-            "permission":{"external_directory":"deny","edit":"deny",
-            "webfetch":"deny","question":"deny","doom_loop":"deny"}}
+            "permission":{"read":"allow","external_directory":"deny",
+            "edit":"deny","webfetch":"deny","websearch":"deny",
+            "question":"deny","doom_loop":"deny",
+            "bash":{"*":"deny","git log*":"allow","git show*":"allow",
+            "git diff*":"allow","git status*":"allow","gh pr view*":"allow",
+            "gh pr diff*":"allow","gh issue view*":"allow"}}}
           PROMPT: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. Base: ${{ github.event.pull_request.base.sha }}.
