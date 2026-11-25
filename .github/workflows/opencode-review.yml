@@ -22,7 +22,7 @@ jobs:
       - name: Test review gathering on fixtures
         shell: bash
         run: bash .github/scripts/test-gather-review-input.sh
-      - name: Test review comment posting on fixtures
+      - name: Test review posting on fixtures
         shell: bash
         run: bash .github/scripts/test-review-post.sh
 
@@ -91,10 +91,10 @@ jobs:
           # Keep it out of git status, so the run never sees it as a change.
           echo "/review-input/" >> .git/info/exclude
           bash .github/scripts/gather-review-input.sh
+      # One run, no GitHub access. The JSONL event stream is the reviewer's
+      # whole output; post-review.sh reads the review from it.
       - name: Review
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          USE_GITHUB_TOKEN: "true"
           MODEL: opencode-go/deepseek-v4.1-flash
           # Nobody answers prompts in CI, so nothing may ask. The reviewer only
           # reads files in the checkout: no shell, no edits, no web.
@@ -182,31 +182,19 @@ jobs:
             If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
             After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the verdict line and the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
         shell: bash
-        run: opencode github run
-      - name: Post inline review
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROMPT" \
+            | opencode run --model "$MODEL" --format json \
+            > "$RUNNER_TEMP/review-events.jsonl"
+      # Posts the marker comment and inline review, then removes or
+      # minimizes earlier ones.
+      - name: Post review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           DIFF: review-input/diff.patch
+          EVENTS: ${{ runner.temp }}/review-events.jsonl
         shell: bash
         run: bash .github/scripts/post-review.sh
-      - name: Keep only the newest review
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]"
-              and (.body | startswith("<!-- opencode-review -->"))) | .id' \
-            | sort -n | head -n -1)
-          for id in $ids; do
-            if ! gh api --method DELETE "repos/$REPO/issues/comments/$id" \
-              --silent 2> "$RUNNER_TEMP/err.txt"; then
-              grep -q "HTTP 404" "$RUNNER_TEMP/err.txt" || { cat "$RUNNER_TEMP/err.txt"; exit 1; }
-              echo "comment $id is already gone"
-            fi
-          done

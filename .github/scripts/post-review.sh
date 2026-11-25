@@ -1,82 +1,139 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Starts every comment this workflow manages (both fallbacks below) and ends every review it posts.
+# Posts one opencode review from the event stream of 'opencode run --format json':
+# - one issue comment that starts with the marker and holds the human-readable review;
+# - one COMMENT pull request review that ends with the marker and carries the findings inline.
+#
+# Inputs (environment): REPO (owner/name), PR, GH_TOKEN, DIFF (the PR's unified diff), EVENTS
+# (JSONL events), optional OUT (scratch directory) and GH (gh binary). A reply without a verdict
+# or a valid findings block fails before anything is posted.
+
 review_marker='<!-- opencode-review -->'
 
-# The marker comment keeps the full review for workers; the review body repeats only its verdict.
-review_body() {
+# Prints the last text part of the event stream. An error event means the run failed, so its
+# reply, if any, is not a review.
+reply_text() {
+  local events="$1" errors
+
+  if ! errors=$(jq -r '
+    select(.type == "error") | .error
+    | if type == "string" then . else (.data.message? // .message? // tojson) end
+  ' "$events"); then
+    printf 'ERROR: %s is not a JSONL event stream.\n' "$events" >&2
+    return 1
+  fi
+
+  if [ -n "$errors" ]; then
+    printf 'ERROR: opencode reported an error: %s\n' "$errors" >&2
+    return 1
+  fi
+
+  jq -sj 'map(select(.type == "text") | .part.text | strings) | last // ""' "$events"
+}
+
+verdict_line() {
   awk '
     /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
-    /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); printf "%s", $0; found = 1; exit }
-    END { if (!found) printf "%s", "See the opencode review comment on this pull request for the full review." }
+    /^\*\*Verdict:/ { sub(/[[:space:]]+$/, ""); print; found = 1; exit }
+    END { exit !found }
   ' < "$1"
 }
 
-# A fallback comment carries the marker, so the next "Keep only the newest review" step deletes the
-# source comment in its favour. It therefore keeps the source's whole human-readable part: every
-# line before the findings JSON, without the trailing run footer, under one marker and a verdict.
-fallback_text() {
-  awk '
-    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
-    { lines[++n] = $0 }
-    END {
-      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
-      if (n > 0 && lines[n] ~ /^\[github run\]\(.*\)[[:space:]]*$/) n--
-      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
-      for (i = 1; i <= n; i++) print lines[i]
-    }
-  ' < "$1" | jq -rjRs --arg marker "$review_marker" '
-    (if startswith($marker) then .[($marker | length):] | ltrimstr("\n") else . end
-      | rtrimstr("\n")) as $text
-    | (if $text | split("\n") | any(startswith("**Verdict:")) then ""
-      else "**Verdict: FIX FIRST**" end) as $verdict
-    | [$marker, $verdict, $text] | map(select(length > 0)) | join("\n")
-  '
-}
-
-# A comment is this workflow's review only when its body holds the marker; the model may put a
-# paragraph before it, so the marker can sit on any line.
-has_marker() {
-  grep -qF -- "$review_marker" "$1"
-}
-
-extract_findings() {
+# Prints the body of the first findings block; fails when there is none or it is never closed.
+findings_block() {
   awk '
     !started && /^<!-- opencode-findings-json[[:space:]]*$/ { started = 1; next }
     started && /^-->[[:space:]]*$/ { closed = 1; exit }
     started { print }
-    END { if (!closed) exit 1 }
-  ' < "$1" | jq -cse '
+    END { exit !closed }
+  ' < "$1"
+}
+
+# Reads the findings block on stdin and prints the normalized array, or fails naming the problem.
+validate_findings() {
+  jq -cs '
     def side: if has("side") then .side else "RIGHT" end;
-    def valid_finding:
-      type == "object"
-      and (.path | type == "string")
-      and (.line | type == "number" and . >= 1 and floor == .)
-      and (side == "RIGHT" or side == "LEFT")
-      and (.severity == "MUST" or .severity == "SHOULD")
-      and (.body | type == "string" and length >= 1 and length <= 1500)
-      and (if has("commit") then (.commit | type == "string") else true end);
-    select(length == 1) | .[0]
-    | select(type == "array" and length <= 30 and all(.[]; valid_finding))
-    | map(.side = side | .line |= floor)
+    def problem:
+      if type != "object" then "is not an object"
+      elif (.path | type) != "string" then "path must be a string"
+      elif (.line | type != "number" or . < 1 or floor != .) then "line must be an integer >= 1"
+      elif (side | . != "RIGHT" and . != "LEFT") then "side must be RIGHT or LEFT"
+      elif (.severity | . != "MUST" and . != "SHOULD") then "severity must be MUST or SHOULD"
+      elif (.body | type != "string" or length < 1 or length > 1500) then
+        "body must be a string of 1 to 1500 characters"
+      elif has("commit") and (.commit | type) != "string" then "commit must be a string"
+      else empty
+      end;
+
+    if length != 1 then error("the block must hold exactly one JSON value") else .[0] end
+    | if type != "array" then error("findings must be a JSON array")
+      elif length > 30 then error("\(length) findings given; at most 30 are allowed")
+      else . end
+    | (to_entries | map(.key as $i | .value | problem | "finding \($i): \(.)") | first) as $bad
+    | if $bad then error($bad) else map(.side = side | .line |= floor) end
   '
 }
 
-right_lines() {
-  awk '
-    /^diff --git / { path = ""; in_hunk = 0; remaining = 0; next }
-    !in_hunk && /^\+\+\+ b\// {
-      path = substr($0, 7)
-      sub(/\t$/, "", path)
-      next
+# The comment keeps the reply before the findings block, without a trailing run-link footer,
+# under exactly one marker line and the verdict line.
+marker_comment() {
+  MARKER="$review_marker" VERDICT="$2" awk '
+    function blank(s) { return s ~ /^[[:space:]]*$/ }
+
+    /^<!-- opencode-findings-json[[:space:]]*$/ { exit }
+    { line = $0; sub(/[[:space:]]+$/, "", line) }
+    line == ENVIRON["MARKER"] { next }
+    !verdict_seen && line == ENVIRON["VERDICT"] { verdict_seen = 1; next }
+    { lines[++n] = $0 }
+
+    END {
+      while (n > 0 && blank(lines[n])) n--
+      if (n > 0 && lines[n] ~ /^\[[A-Za-z ]*run\]\(https?:\/\/[^)[:space:]]*\)[[:space:]]*$/) n--
+      while (n > 0 && blank(lines[n])) n--
+      start = 1
+      while (start <= n && blank(lines[start])) start++
+
+      print ENVIRON["MARKER"]
+      print ENVIRON["VERDICT"]
+      for (i = start; i <= n; i++) print lines[i]
     }
+  ' < "$1"
+}
+
+# Prints "path<TAB>line" for every new-file line a RIGHT-side review comment can target: the
+# context and added lines of each hunk. Git C-quotes unusual paths, so quoted paths are decoded.
+right_lines() {
+  LC_ALL=C awk '
+    function unquote(s,   out, i, c) {
+      out = ""
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") {
+          c = substr(s, ++i, 1)
+          if (c ~ /^[0-3]$/) {
+            c = sprintf("%c", c * 64 + substr(s, i + 1, 1) * 8 + substr(s, i + 2, 1))
+            i += 2
+          } else if (c == "t") {
+            c = "\t"
+          } else if (c == "n") {
+            c = "\n"
+          }
+        }
+        out = out c
+      }
+      return out
+    }
+
+    /^diff --git / { path = ""; in_hunk = 0; remaining = 0; next }
+    !in_hunk && /^\+\+\+ b\// { path = substr($0, 7); sub(/\t$/, "", path); next }
     !in_hunk && /^\+\+\+ "b\/.*"\t?$/ {
       path = substr($0, 8)
       sub(/"\t?$/, "", path)
+      path = unquote(path)
       next
     }
-    !in_hunk && /^\+\+\+ \/dev\/null$/ { path = ""; next }
+    !in_hunk && /^\+\+\+ \/dev\/null/ { path = ""; next }
     /^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@/ {
       in_hunk = 1
       fields = split(substr($3, 2), range, ",")
@@ -92,38 +149,88 @@ right_lines() {
   ' < "$1"
 }
 
-prepare_review() {
-  local comment="$1" diff="$2" work="$3"
+# A finding is inline only on a RIGHT-side diff line; the rest become bullets in the review body.
+review_payload() {
+  local verdict="$1" findings="$2" lines="$3"
 
-  review_body "$comment" > "$work/body"
-  fallback_text "$comment" > "$work/fallback-text"
-
-  if ! has_marker "$comment" || ! extract_findings "$comment" > "$work/findings.json" 2> /dev/null; then
-    jq -n --rawfile text "$work/fallback-text" '
-      {body: ($text + "\n\nInline comments were skipped because the findings JSON was malformed.")}
-    '
-    return
-  fi
-
-  right_lines "$diff" > "$work/right-lines"
-  jq -n --rawfile body "$work/body" --slurpfile findings "$work/findings.json" \
-    --rawfile lines "$work/right-lines" '
-    ($lines | split("\n") | map({key: ., value: true}) | from_entries) as $valid
-    | ($findings[0] | map(. + {inline: (.side == "RIGHT" and
-        ($valid[.path + "\t" + (.line | tostring)] == true))})) as $findings
-    | ($findings | map(select(.inline | not)
-        | "- \(.path):\(.line) (\(.severity)): \(.body)")) as $bullets
+  jq -n --arg verdict "$verdict" --arg marker "$review_marker" \
+    --slurpfile findings "$findings" --rawfile lines "$lines" '
+    ($lines | split("\n") | map(select(length > 0) | {key: ., value: true}) | from_entries) as $valid
+    | ($findings[0] | map(. + {inline: (.side == "RIGHT"
+        and $valid[.path + "\t" + (.line | tostring)] == true)})) as $placed
+    | ($placed | map(select(.inline))) as $inline
+    | ($placed | map(select(.inline | not) | "- \(.path):\(.line) (\(.severity)): \(.body)"))
+      as $bullets
     | {
         event: "COMMENT",
-        body: ([$body, (
-          if $bullets == [] then ""
-          else "Some findings were moved here because they could not be posted inline.\n\n"
-            + ($bullets | join("\n"))
-          end
-        )] | map(select(length > 0)) | join("\n\n")),
-        comments: ($findings | map(select(.inline) | {path, line, side, body}))
+        body: ([
+          $verdict,
+          (if $placed == [] then "No findings to place on the diff."
+            else "\($inline | length) of \($placed | length) findings are inline comments." end)
+            + " The full review is in the opencode review comment on this pull request.",
+          (if $bullets == [] then empty
+            else "Findings that could not be posted inline:\n\n" + ($bullets | join("\n")) end),
+          $marker
+        ] | join("\n\n")),
+        comments: ($inline | map({path, line, side, body}))
       }
   '
+}
+
+# Prints the new comment's numeric ID.
+post_marker_comment() {
+  local payload="$1" response="$2"
+
+  if ! "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" \
+    --input "$payload" > "$response"; then
+    echo 'ERROR: Could not post the review comment.' >&2
+    return 1
+  fi
+
+  jq -er '.id | numbers' "$response"
+}
+
+# Keeps only the newest marker comment: every older bot comment that starts with the marker goes.
+delete_older_comments() {
+  local newest="$1" err="$2"
+  local ids id
+
+  if ! ids=$("${GH:-gh}" api "repos/$REPO/issues/$PR/comments" --paginate |
+    jq -sr --argjson newest "$newest" --arg marker "$review_marker" '
+      add // [] | .[]
+      | select(.id < $newest)
+      | select(.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]")
+      | select(.body // "" | startswith($marker))
+      | .id
+    '); then
+    echo 'ERROR: Could not list older review comments.' >&2
+    return 1
+  fi
+
+  for id in $ids; do
+    if "${GH:-gh}" api --method DELETE "repos/$REPO/issues/comments/$id" --silent 2> "$err"; then
+      printf 'Deleted older review comment %s.\n' "$id"
+    elif grep -q 'HTTP 404' "$err"; then
+      printf 'Review comment %s is already gone.\n' "$id"
+    else
+      printf 'ERROR: Could not delete review comment %s.\n' "$id" >&2
+      cat -- "$err" >&2
+      return 1
+    fi
+  done
+}
+
+# Prints the new review's node ID. The review is a COMMENT: it never approves or requests changes.
+post_review() {
+  local payload="$1" response="$2"
+
+  if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" \
+    --input "$payload" > "$response"; then
+    echo 'ERROR: Could not post the pull request review.' >&2
+    return 1
+  fi
+
+  jq -er '.node_id | strings | select(length > 0)' "$response"
 }
 
 minimize_old_reviews() {
@@ -190,83 +297,56 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# The fallback is a marker comment holding the full review text and every finding: one bullet
-# per finding moved out of the review, then one per inline comment, each with its severity.
-review_fallback() {
-  local payload="$1" findings="$2" text="$3"
+# Validates the whole reply before posting anything, so a bad reply fails with nothing on the PR.
+prepare() {
+  local events="$1" diff="$2" work="$3"
+  local verdict
 
-  jq -n --rawfile text "$text" --slurpfile payload "$payload" --slurpfile findings "$findings" '
-    def bullet: "- \(.path):\(.line) (\(.severity)): \(.body)";
-    def section($note; $bullets):
-      if $bullets == [] then "" else $note + "\n\n" + ($bullets | join("\n")) end;
+  reply_text "$events" > "$work/reply"
 
-    $payload[0].comments as $comments
-    | ($findings[0] | map(. as $f | {finding: $f, inline: ($comments | any(.path == $f.path
-        and .line == $f.line and .side == $f.side and .body == $f.body))})) as $placed
-    | {body: ([$text,
-        section("Some findings were moved here because they could not be posted inline.";
-          $placed | map(select(.inline | not) | .finding | bullet)),
-        section("Inline placement failed, so these findings are listed here instead.";
-          $placed | map(select(.inline) | .finding | bullet))
-      ] | map(select(length > 0)) | join("\n\n"))}
-  '
-}
-
-# Never fails silently: a rejected review falls back to one marker comment with every finding.
-post_review() {
-  local payload="$1" work="$2"
-  local newest
-
-  # The review ends with the marker line (its verdict stays first) so minimize_old_reviews can tell
-  # this workflow's reviews from other bot reviews.
-  jq --arg marker "$review_marker" '.body += "\n\n" + $marker' "$payload" > "$work/review-payload.json"
-
-  if ! "${GH:-gh}" api --method POST "repos/$REPO/pulls/$PR/reviews" \
-    --input "$work/review-payload.json" > "$work/review.json"; then
-    echo 'WARNING: Could not post the review; posting its findings as a plain comment instead.' >&2
-    review_fallback "$payload" "$work/findings.json" "$work/fallback-text" > "$work/fallback.json"
-    "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$work/fallback.json" --silent
-    return 0
+  if ! grep -q '[^[:space:]]' "$work/reply"; then
+    printf 'ERROR: %s has no text reply from opencode.\n' "$events" >&2
+    return 1
   fi
 
-  if ! newest=$(jq -er '.node_id | strings | select(length > 0)' "$work/review.json"); then
-    echo 'WARNING: Posted the review but its node ID was missing; skipping minimization.' >&2
-    return 0
+  if ! verdict=$(verdict_line "$work/reply"); then
+    echo 'ERROR: review reply has no Verdict line' >&2
+    return 1
   fi
-  printf 'Posted review %s.\n' "$newest"
-  minimize_old_reviews "$newest" "$work/minimize.err"
+
+  if ! findings_block "$work/reply" > "$work/findings-block"; then
+    echo 'ERROR: review reply has no closed <!-- opencode-findings-json ... --> block' >&2
+    return 1
+  fi
+
+  if ! validate_findings < "$work/findings-block" > "$work/findings.json" 2> "$work/findings.err"; then
+    printf 'ERROR: review findings JSON is invalid: %s\n' "$(cat -- "$work/findings.err")" >&2
+    return 1
+  fi
+
+  marker_comment "$work/reply" "$verdict" | jq -Rs '{body: rtrimstr("\n")}' > "$work/comment.json"
+  right_lines "$diff" > "$work/right-lines"
+  review_payload "$verdict" "$work/findings.json" "$work/right-lines" > "$work/review.json"
 }
 
 main() (
-  : "${REPO:?REPO is required}" "${PR:?PR is required}" \
-    "${GH_TOKEN:?GH_TOKEN is required}" "${DIFF:?DIFF is required}"
+  : "${REPO:?REPO is required}" "${PR:?PR is required}" "${GH_TOKEN:?GH_TOKEN is required}" \
+    "${DIFF:?DIFF is required}" "${EVENTS:?EVENTS is required}"
 
   out="${OUT:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
   mkdir -p -- "$out"
   temp=$(mktemp -d "${out%/}/post-review.XXXXXX")
   trap 'rm -rf -- "$temp"' EXIT
 
-  # Only the newest bot comment is this run's output; an older review must never be reposted, so a
-  # newest comment without the marker or findings still goes through the fallbacks below.
-  "${GH:-gh}" api "repos/$REPO/issues/$PR/comments" --paginate |
-    jq -sr '
-      map(.[] | select(.user.login == "github-actions[bot]" or .user.login == "opencode-agent[bot]"))
-      | max_by(.id) | .body // ""
-    ' > "$temp/comment"
+  prepare "$EVENTS" "$DIFF" "$temp"
 
-  if ! grep -q -- '^\*\*Verdict:' "$temp/comment"; then
-    echo 'ERROR: The opencode review comment has no "Verdict:" line, so the review is invalid.' >&2
-    exit 1
-  fi
+  comment_id=$(post_marker_comment "$temp/comment.json" "$temp/comment-response.json")
+  printf 'Posted review comment %s.\n' "$comment_id"
+  delete_older_comments "$comment_id" "$temp/delete.err"
 
-  prepare_review "$temp/comment" "$DIFF" "$temp" > "$temp/payload.json"
-  if ! jq -e 'has("comments")' "$temp/payload.json" > /dev/null; then
-    echo 'WARNING: Inline review comments skipped: findings JSON was missing or malformed.' >&2
-    "${GH:-gh}" api --method POST "repos/$REPO/issues/$PR/comments" --input "$temp/payload.json" --silent
-    exit 0
-  fi
-
-  post_review "$temp/payload.json" "$temp"
+  review_id=$(post_review "$temp/review.json" "$temp/review-response.json")
+  printf 'Posted review %s.\n' "$review_id"
+  minimize_old_reviews "$review_id" "$temp/minimize.err"
 )
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
