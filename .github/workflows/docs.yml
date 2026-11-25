@@ -45,3 +45,57 @@ jobs:
       - name: Deploy
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && env.CLOUDFLARE_API_TOKEN != ''
         run: npx cf deploy --message "${GITHUB_SHA}"
+
+  format:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tidy v2.0.0
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o tidy.tar.gz \
+            https://github.com/lukeed/tidy/releases/download/v2.0.0/tidy-x86_64-unknown-linux-musl.tar.gz
+          echo "4b8166b1cdde610fd783f2d59511b0fb35d15ef96069ef20642b948ab90907ea  tidy.tar.gz" \
+            | sha256sum -c -
+          mkdir tidy-bin
+          tar -xzf tidy.tar.gz -C tidy-bin tidy
+          echo "$RUNNER_TEMP/tidy-bin" >> "$GITHUB_PATH"
+      # A folder walk skips dot-folders, so the job names every tracked file
+      # instead. Each path gets a ./ prefix so a name starting with - cannot read
+      # as a flag (tidy v2.0.0 rejects --), and --skip-unknown leaves names tidy
+      # does not recognise, such as LICENSE and bun.lock, as they are.
+      # tidy check exits 1 for unformatted files and 2 for a parse or config
+      # error; the step reports which, and either one fails the job.
+      - name: tidy check
+        run: |
+          mapfile -d '' files < <(git ls-files -z)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::git ls-files named no files to check"
+            exit 1
+          fi
+          files=("${files[@]/#/./}")
+          set +e
+          tidy check --skip-unknown "${files[@]}"
+          status=$?
+          set -e
+          case "$status" in
+            0) ;;
+            1)
+              echo "::error::tidy found unformatted files (listed above); run tidy up on the named paths"
+              exit 1
+              ;;
+            2)
+              echo "::error::tidy hit a parse or config error (reported above)"
+              exit 2
+              ;;
+            *)
+              echo "::error::tidy check exited with unexpected status $status"
+              exit "$status"
+              ;;
+          esac
