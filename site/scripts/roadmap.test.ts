@@ -1,60 +1,63 @@
-import { describe, expect, test } from "bun:test"
-import { planStatus, renderRoadmap, type Row } from "./roadmap"
+import { describe, expect, test } from "bun:test";
+import { planStatus, renderRoadmap, type Row } from "./roadmap";
 
 describe("a plan issue's status", () => {
   test("ends with its bold span", () => {
     const body =
-      "**Status: B0 accepted; B1 in progress in [barn#7](https://github.com/wrkhse/barn/pull/7).** The owner made..."
+      "**Status: B0 accepted; B1 in progress in [barn#7](https://github.com/wrkhse/barn/pull/7).** The owner made...";
 
     expect(planStatus(body)).toBe(
       "B0 accepted; B1 in progress in [barn#7](https://github.com/wrkhse/barn/pull/7)",
-    )
-  })
+    );
+  });
 
   test("after a bold label ends with its first sentence", () => {
     const body =
-      "**Status:** Approved, resumed 2026-11-19 at the owner's word. O0 may be framed; ..."
+      "**Status:** Approved, resumed 2026-11-19 at the owner's word. O0 may be framed; ...";
 
-    expect(planStatus(body)).toBe("Approved, resumed 2026-11-19 at the owner's word")
-  })
+    expect(planStatus(body)).toBe(
+      "Approved, resumed 2026-11-19 at the owner's word",
+    );
+  });
 
   test("leaves out the words after its bold span", () => {
-    const body = "**Status: Approved plan, being built** on the `v2` branch. This is..."
+    const body =
+      "**Status: Approved plan, being built** on the `v2` branch. This is...";
 
-    expect(planStatus(body)).toBe("Approved plan, being built")
-  })
+    expect(planStatus(body)).toBe("Approved plan, being built");
+  });
 
   test("keeps the periods inside a link", () => {
     const body =
-      "**Status: Implemented in [`v0.1.0`](https://github.com/StevenJPx2/rungs/releases/tag/v0.1.0)** ([#3](https://github.com/StevenJPx2/rungs/pull/3))"
+      "**Status: Implemented in [`v0.1.0`](https://github.com/StevenJPx2/rungs/releases/tag/v0.1.0)** ([#3](https://github.com/StevenJPx2/rungs/pull/3))";
 
     expect(planStatus(body)).toBe(
       "Implemented in [`v0.1.0`](https://github.com/StevenJPx2/rungs/releases/tag/v0.1.0)",
-    )
-  })
+    );
+  });
 
   test("of one word drops the note after it", () => {
-    const body = "**Status: Proposed** (owner, 2026-11-19). Master issue: ..."
+    const body = "**Status: Proposed** (owner, 2026-11-19). Master issue: ...";
 
-    expect(planStatus(body)).toBe("Proposed")
-  })
+    expect(planStatus(body)).toBe("Proposed");
+  });
 
   test("is found on a line after a heading", () => {
-    const body = "# Plan: barn\n**Status: Proposed** (owner, 2026-11-19)."
+    const body = "# Plan: barn\n**Status: Proposed** (owner, 2026-11-19).";
 
-    expect(planStatus(body)).toBe("Proposed")
-  })
+    expect(planStatus(body)).toBe("Proposed");
+  });
 
   test("is undefined when no line states one", () => {
-    const body = "# Plan: barn\n\nThe shared daemon, built in slices."
+    const body = "# Plan: barn\n\nThe shared daemon, built in slices.";
 
-    expect(planStatus(body)).toBe(undefined)
-  })
+    expect(planStatus(body)).toBe(undefined);
+  });
 
   test("escapes a pipe for the table", () => {
-    expect(planStatus("Status: Ready | blocked")).toBe("Ready \\| blocked")
-  })
-})
+    expect(planStatus("Status: Ready | blocked")).toBe("Ready \\| blocked");
+  });
+});
 
 describe("the roadmap page", () => {
   test("has one row per project, with its release, plan and status", () => {
@@ -86,7 +89,7 @@ describe("the roadmap page", () => {
           url: "https://github.com/wrkhse/o11y/issues/1",
         },
       },
-    ]
+    ];
 
     expect(renderRoadmap(rows)).toBe(
       [
@@ -105,6 +108,6 @@ describe("the roadmap page", () => {
         "| [o11y](https://github.com/wrkhse/o11y) | None yet | [o11y#1](https://github.com/wrkhse/o11y/issues/1): o11y, the shared telemetry | Not stated |",
         "",
       ].join("\n"),
-    )
-  })
-})
+    );
+  });
+});
