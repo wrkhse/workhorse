@@ -1,0 +1,102 @@
+name: OpenCode review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Remove previous automated reviews
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]"
+              and (.body | contains("<!-- opencode-review -->"))) | .id')
+          for id in $ids; do
+            gh api --method DELETE "repos/$REPO/issues/comments/$id"
+          done
+      - name: Sign in to OpenCode
+        env:
+          AUDIENCE: https://opencode.ai/console
+          CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -re .value)
+          token=$(curl -sSf https://opencode.ai/console/auth/oauth/token \
+            -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+            -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+            -d client_id="$CLIENT_ID" \
+            -d subject_token="$oidc" | jq -re .access_token)
+          echo "::add-mask::$token"
+          echo "OPENCODE_API_KEY=$token" >> "$GITHUB_ENV"
+      - uses: anomalyco/opencode/github@f4e363c8295fa90a03dddc451882fffe8fbce357 # v1.19.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_CONFIG_CONTENT: '{"small_model":"opencode-go/deepseek-v4.1-flash"}'
+        with:
+          model: opencode-go/deepseek-v4.1-flash
+          use_github_token: true
+          prompt: |
+            You review pull request #${{ github.event.pull_request.number }} in
+            ${{ github.repository }}. Base: ${{ github.event.pull_request.base.sha }}.
+            Head: ${{ github.event.pull_request.head.sha }}. Read the repository's
+            AGENTS.md and the issue the PR body links (gh issue view) first.
+
+            Earlier comments from github-actions[bot] are not review material.
+
+            1. The change. Read `git diff BASE...HEAD` and the files it touches.
+               Report correctness and security bugs, behavior changes without a
+               test, unbounded loops, queues, waits or reads, paths that fail open,
+               unwrap or unsafe outside tests, unpinned actions and write
+               permissions, and anything the linked issue asks for that is missing.
+
+            2. Gaming the checks. Read every commit on its own
+               (`git log --reverse --format='%h %s' BASE..HEAD`, then
+               `git show <sha>` for each). Flag any commit that makes a check
+               pass without fixing the cause, even when a later commit hides it:
+               - new #[allow], #[expect], #[ignore], cfg(not(test)), clippy or
+                 rustc lint relaxations, eslint or ts-ignore comments;
+               - new mutants exclusions (.cargo/mutants.toml, #[mutants::skip]),
+                 unless each names the mutant and explains why it is equivalent;
+               - deleted, skipped or weakened tests and assertions: includes()
+                 where an exact compare was, looser regexes, fewer cases, a test
+                 that returns early or passes when its setup is missing;
+               - workflow changes: continue-on-error, || true, a removed job or
+                 step, a lost pipefail, a narrower trigger or paths filter, a
+                 raised timeout or retry, a check renamed so a required name
+                 stops matching, a job skipped on some condition;
+               - deny.toml, clippy.toml, rust-toolchain, MSRV, coverage or
+                 threshold changes that loosen a gate;
+               - a test or proof that can pass while the feature is broken.
+               Name the commit, file and line, and say what it hides.
+
+            Output, in this exact shape and nothing else:
+            <!-- opencode-review -->
+            **Verdict: MERGE AS IS** or **Verdict: FIX FIRST**
+
+            **MUST** (bugs and every gaming finding), one line each with
+            file:line. **SHOULD**, one line each. Omit an empty section.
+            At most 25 lines. No praise.
