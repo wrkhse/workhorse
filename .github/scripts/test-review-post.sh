@@ -632,12 +632,12 @@ jq -Rse '
   == [1]
 ' "$tmp/main.out" > /dev/null
 jq -e '.body | split("\n") as $lines
-  | ([$lines[] | select(. == "- a.txt:2: Fix this. (commit 1234567)")]
-      | length) == 1
-    and ([$lines[] | select(. == "- a.txt:9: Off the diff. (commit true)")]
-      | length) == 1
-    and ([$lines[] | select(. == "- a.txt:3: Off the diff too.")]
-      | length) == 1
+  | ([$lines[] | select(startswith("- a.txt:2: "))]
+      == ["- a.txt:2: Fix this. (commit 1234567)"])
+    and ([$lines[] | select(startswith("- a.txt:9: "))]
+      == ["- a.txt:9: Off the diff. (commit true)"])
+    and ([$lines[] | select(startswith("- a.txt:3: "))]
+      == ["- a.txt:3: Off the diff too."])
     and ([$lines[] | select(contains("(commit"))]
       == ["- a.txt:2: Fix this. (commit 1234567)",
           "- a.txt:9: Off the diff. (commit true)"])
