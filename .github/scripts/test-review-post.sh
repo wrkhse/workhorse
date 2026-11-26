@@ -261,7 +261,7 @@ jq -se 'length == 2' "$tmp/opencode-calls.jsonl" > /dev/null
 jq -e '.body | split("\n")
   | .[0] == "<!-- opencode-review -->" and .[1] == "**Verdict: FIX FIRST**"
     and any(. == "**MUST**") and any(. == "**SHOULD**")
-    and any(endswith("Fix this.")) and any(endswith("Off the diff."))
+    and any(. == "- a.txt:2: Fix this.") and any(. == "- a.txt:9: Off the diff.")
 ' "$tmp/comment-payload.json" > /dev/null
 jq -e '.event == "COMMENT"
   and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
@@ -270,6 +270,28 @@ jq -e '.event == "COMMENT"
 sed -n 's/^Review events: //p' "$tmp/main.out" "$tmp/main.err" |
   jq -se 'last | .attempts == 2' > /dev/null
 printf 'ok: a terse repair with only the marker, verdict and findings renders the findings\n'
+
+# A partial findings section: the reply has the MUST header and bullet but no
+# SHOULD section, so only the missing SHOULD header and bullet are added from JSON
+# and the MUST bullet stays single.
+write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  'Review summary.' '' '**MUST**' '- a.txt:2: Fix this.' '' \
+  '<!-- opencode-findings-json' "$findings" '-->')"
+expect_posted
+jq -e '.body | split("\n")
+  | (map(select(. == "**MUST**")) | length == 1)
+    and (map(select(endswith("Fix this."))) == ["- a.txt:2: Fix this."])
+    and (map(select(. == "**SHOULD**")) | length == 1)
+    and (map(select(endswith("Off the diff."))) == ["- a.txt:9: Off the diff."])
+    and (index("**MUST**") < index("- a.txt:2: Fix this."))
+    and (index("**SHOULD**") < index("- a.txt:9: Off the diff."))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n") | any(. == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+printf '%s %s\n' 'ok: a partial findings section keeps its MUST bullet' \
+  'and gains the missing SHOULD section'
 
 write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
 FAIL_DELETE=1 expect_posted

@@ -160,28 +160,89 @@ marker_comment() {
   ' < "$1"
 }
 
-# Succeeds when the human-readable reply has its own findings section.
-has_findings_section() {
-  grep -Eq '^\*\*(MUST|SHOULD)\*\*' "$1"
-}
+# Renders, as bullets, the findings of one severity whose body the human-readable
+# reply does not already hold, either as written or indented the way a bullet
+# continues it. Prints nothing when the reply holds them all.
+missing_bullets() {
+  local reply="$1" findings="$2" severity="$3"
 
-# Renders the findings array as MUST and SHOULD bullets so no finding is lost when the reply has
-# no findings section of its own. Prints nothing for an empty array.
-findings_section() {
-  jq -r '
+  jq -r --rawfile reply "$reply" --arg severity "$severity" '
     def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
       + (if has("commit") then " (commit \(.commit))" else "" end);
-    def section($severity):
-      map(select(.severity == $severity) | bullet)
-      | if . == [] then empty else "\n**\($severity)**\n\(join("\n"))" end;
+    def written: .body as $body
+      | $reply | (contains($body) or contains($body | gsub("\n"; "\n  ")));
 
-    if . == [] then empty
-    else
-      "\nThe reply had no findings section, so these bullets were rendered from its structured findings.",
-      section("MUST"),
-      section("SHOULD")
-    end
-  ' < "$1"
+    map(select(.severity == $severity) | select(written | not) | bullet) | join("\n")
+  ' < "$findings"
+}
+
+# Adds every finding the reply left out to the rendered marker comment, so none is
+# lost: under the reply's own MUST or SHOULD header when it has one, otherwise under
+# a new header at the end. The explanation line appears only when something was
+# added.
+add_missing_findings() {
+  local reply="$1" findings="$2" rendered="$3"
+  local must should
+
+  must=$(missing_bullets "$reply" "$findings" MUST) || return 1
+  should=$(missing_bullets "$reply" "$findings" SHOULD) || return 1
+
+  MUST_BULLETS="$must" SHOULD_BULLETS="$should" awk '
+    function blank(s) { return s ~ /^[[:space:]]*$/ }
+    # A bold line or a Markdown heading ends the section before it.
+    function header(s) { return s ~ /^\*\*[^*]+\*\*/ || s ~ /^#/ }
+
+    { lines[++n] = $0 }
+
+    END {
+      order[1] = "MUST"; order[2] = "SHOULD"
+      bullets["MUST"] = ENVIRON["MUST_BULLETS"]
+      bullets["SHOULD"] = ENVIRON["SHOULD_BULLETS"]
+
+      # A section runs from its first header to its last non-blank line before the
+      # next header.
+      for (i = 1; i <= n; i++) {
+        if (header(lines[i])) {
+          section = ""
+          if (match(lines[i], /^\*\*(MUST|SHOULD)\*\*/)) {
+            severity = substr(lines[i], 3, RLENGTH - 4)
+            if (!(severity in end_of)) section = severity
+          }
+        }
+        if (section != "" && !blank(lines[i])) end_of[section] = i
+      }
+
+      for (i = 1; i <= n; i++) {
+        print lines[i]
+        for (k = 1; k <= 2; k++) {
+          severity = order[k]
+          if ((severity in end_of) && end_of[severity] == i &&
+            bullets[severity] != "") {
+            print bullets[severity]
+            added = 1
+          }
+        }
+      }
+
+      for (k = 1; k <= 2; k++) {
+        severity = order[k]
+        if (!(severity in end_of) && bullets[severity] != "") added = 1
+      }
+      if (!added) exit
+
+      print ""
+      note = "The reply left out these findings, so they were rendered"
+      print note " from its structured findings."
+      for (k = 1; k <= 2; k++) {
+        severity = order[k]
+        if (!(severity in end_of) && bullets[severity] != "") {
+          print ""
+          print "**" severity "**"
+          print bullets[severity]
+        }
+      }
+    }
+  ' < "$rendered"
 }
 
 # Prints "path<TAB>line" for every new-file line a RIGHT-side review comment can target: the
@@ -457,10 +518,9 @@ prepare() {
   esac
 
   IFS= read -r verdict < "$work/verdict"
-  marker_comment "$work/comment" "$verdict" > "$work/comment.md"
-  if ! has_findings_section "$work/comment"; then
-    findings_section "$work/findings.json" >> "$work/comment.md"
-  fi
+  marker_comment "$work/comment" "$verdict" > "$work/comment.rendered"
+  add_missing_findings "$work/comment" "$work/findings.json" \
+    "$work/comment.rendered" > "$work/comment.md" || return 1
   jq -Rs '{body: rtrimstr("\n")}' < "$work/comment.md" > "$work/comment.json"
   right_lines "$diff" > "$work/right-lines"
   review_payload "$verdict" "$work/findings.json" "$work/right-lines" > "$work/review.json"
