@@ -1,9 +1,9 @@
 # Repository standards
 
 **Status:** in force for every repository in the `wrkhse` organization. This page
-is the canonical place for the README prose standard. Automation for the
-code-example part is planned in atelier's slice 12, "Code examples that stay
-true".
+is the canonical place for the README prose standard. Automation for code
+examples and generated reference is built after the first end-to-end flow, as
+atelier's slice 12, "Code examples that stay true".
 
 A repository README answers one question: how does a person or an agent use
 this project? Implementation lives in the inner docs.
@@ -132,6 +132,21 @@ flowchart LR
 - **Source match:** the calls, flags and commands in the block exist in the
   source it documents, with arguments the source accepts.
 
+The README stays hand-written and organized by task. Its examples run as tests:
+README doctests in Rust library crates, and trycmd for CLI console blocks.
+
+## Generated reference
+
+Reference is generated from code, never hand-written, and committed to each
+repository's `docs/reference`. The hub pulls `docs/reference` into each
+project's Reference pages. A CI check regenerates it and fails when the
+committed files differ from the code.
+
+| Reference              | Generated from       | With                     |
+| ---------------------- | -------------------- | ------------------------ |
+| CLI commands and flags | The clap definitions | clap-markdown or similar |
+| Config and protocol    | The Rust types       | schemars, as JSON Schema |
+
 ## Issues and pull requests
 
 Issues and pull requests follow
@@ -139,7 +154,11 @@ Issues and pull requests follow
 
 ## Enforcement
 
-| Part                         | Held by                     |
-| ---------------------------- | --------------------------- |
-| README prose, this page      | Review against this page    |
-| Code examples that stay true | atelier, slice 12 (planned) |
+| Part                         | Held by                                           |
+| ---------------------------- | ------------------------------------------------- |
+| README prose, this page      | Review against this page                          |
+| Code examples that stay true | README doctests and trycmd in CI (slice 12)       |
+| Generated reference          | CI staleness check on `docs/reference` (slice 12) |
+
+Slice 12 is atelier's "Code examples that stay true", built after the first
+end-to-end flow.
