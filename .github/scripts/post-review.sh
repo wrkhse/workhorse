@@ -93,8 +93,9 @@ verdict_line() {
 }
 
 # Prints the prose after the verdict (or from the start if there is no verdict)
-# up to the first bullet or findings block. Drops headings, HTML comments,
-# trailing run links, and leading, trailing and repeated blank lines.
+# up to the first bullet, findings block, ``` or ```json fence, or line that is
+# only a JSON array. Drops headings, HTML comments, trailing run links, and
+# leading, trailing and repeated blank lines.
 summary_text() {
   VERDICT="$1" awk '
     function trim(s) {
@@ -108,6 +109,8 @@ summary_text() {
     !after { after = trim($0) == ENVIRON["VERDICT"]; next }
     /^[[:space:]]*<!-- opencode-findings-json/ { exit }
     /^[[:space:]]*([-*+]|[0-9]+[.)])[[:space:]]/ { exit }
+    tolower($0) ~ /^[[:space:]]*```(json)?[[:space:]]*$/ { exit }
+    /^[[:space:]]*\[[[:space:]]*[]{]/ && /\][[:space:]]*$/ { exit }
     /^[[:space:]]*(#|<!--)/ { next }
     /^[[:space:]]*\*\*[^*]+\*\*:?[[:space:]]*$/ { next }
     blank($0) && (n == 0 || blank(lines[n])) { next }
@@ -121,15 +124,83 @@ summary_text() {
   '
 }
 
-# Prints the body of the first findings block; fails when there is none or it is
-# never closed.
-findings_block() {
-  awk '
-    !started && /^<!-- opencode-findings-json[[:space:]]*$/ { started = 1; next }
-    started && /^-->[[:space:]]*$/ { closed = 1; exit }
-    started { print }
-    END { exit !closed }
-  '
+# Writes each findings candidate in the reply to $dir/N, numbered in search order,
+# and prints its kind on a line of its own: the first closed findings block, each
+# closed ``` or ```json fenced block, then each line that is only a JSON array.
+# Keeps at most 20 candidates.
+findings_candidates() {
+  local reply="$1" dir="$2"
+
+  awk -v dir="$dir" '
+    function keep(kind, text,   file) {
+      if (n >= 20) return
+      file = dir "/" ++n
+      printf "%s", text > file
+      close(file)
+      print kind
+    }
+
+    FNR == 1 { pass++; open = 0; body = "" }
+    pass == 1 && done { next }
+    pass == 1 && !open && /^<!-- opencode-findings-json[[:space:]]*$/ {
+      open = 1
+      next
+    }
+    pass == 1 && open && /^-->[[:space:]]*$/ {
+      keep("findings block", body)
+      open = 0
+      done = 1
+      next
+    }
+    pass == 2 && !open && tolower($0) ~ /^[[:space:]]*```(json)?[[:space:]]*$/ {
+      open = 1
+      body = ""
+      next
+    }
+    pass == 2 && open && /^[[:space:]]*```[[:space:]]*$/ {
+      keep("fenced block", body)
+      open = 0
+      next
+    }
+    pass == 3 && /^[[:space:]]*\[[[:space:]]*[]{]/ && /\][[:space:]]*$/ {
+      keep("JSON array line", $0 "\n")
+    }
+    open { body = body $0 "\n" }
+  ' "$reply" "$reply" "$reply"
+}
+
+# Writes the first findings candidate that validates to $work/findings.json. Every
+# candidate meets the same strict rules. Returns 1 when none does, naming the first
+# candidate's problem, and 2 for other failures.
+extract_findings() {
+  local work="$1" dir="$1/candidates" kind i=0
+
+  rm -rf -- "$dir" && mkdir -- "$dir" || return 2
+  findings_candidates "$work/reply" "$dir" > "$dir/kinds" || return 2
+
+  if [ ! -s "$dir/kinds" ]; then
+    printf 'ERROR: review reply has no closed %s block, %s or %s\n' \
+      '<!-- opencode-findings-json ... -->' 'fenced JSON block' \
+      'JSON array line' >&2
+    return 1
+  fi
+
+  while IFS= read -r kind; do
+    i=$((i + 1))
+
+    if validate_findings < "$dir/$i" > "$work/findings.json" 2> "$dir/$i.err"
+    then
+      if [ "$kind" != 'findings block' ]; then
+        printf 'WARNING: took the review findings from a %s.\n' "$kind" >&2
+      fi
+
+      return 0
+    fi
+  done < "$dir/kinds"
+
+  printf 'ERROR: review findings JSON is invalid: %s\n' \
+    "$(cat -- "$dir/1.err")" >&2
+  return 1
 }
 
 # Reads the findings block on stdin and prints the normalized array, or fails naming
@@ -436,18 +507,7 @@ validate_reply() {
     return 1
   fi
 
-  if ! findings_block < "$work/reply" > "$work/findings-block"; then
-    printf 'ERROR: review reply has no closed %s block\n' \
-      '<!-- opencode-findings-json ... -->' >&2
-    return 1
-  fi
-
-  if ! validate_findings < "$work/findings-block" > "$work/findings.json" \
-    2> "$work/findings.err"; then
-    printf 'ERROR: review findings JSON is invalid: %s\n' \
-      "$(cat -- "$work/findings.err")" >&2
-    return 1
-  fi
+  extract_findings "$work" || return $?
 
   verdict=$(jq -r '
     if any(.[]; .severity == "MUST") then "**Verdict: FIX FIRST**"

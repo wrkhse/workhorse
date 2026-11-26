@@ -301,6 +301,27 @@ jq -Rse '
 expect_sections
 printf 'ok: invalid findings JSON is repaired once and the repair posts\n'
 
+# Findings in a fenced json code block instead of the HTML comment block are
+# accepted on the first turn: no MODEL is given, so a repair could not run.
+fence='```'
+fenced=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  "${fence}json" "$findings" "$fence")
+events "$fenced" > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e --arg fence "$fence" '.body | contains($fence) | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: fenced json findings post without a repair turn\n'
+
 events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
 jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
