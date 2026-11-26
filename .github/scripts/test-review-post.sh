@@ -302,86 +302,37 @@ jq -Rse '
 expect_sections
 printf 'ok: invalid findings JSON is repaired once and the repair posts\n'
 
-# Findings in a fenced json code block instead of the HTML comment block are
-# accepted on the first turn: no MODEL is given, so a repair could not run.
+# A reply whose findings are only in a json fence or on a bare array line has
+# no findings block, so its first turn fails validation. Exactly one repair turn
+# runs, and its findings block posts; the fallback's findings never do.
+expect_one_repair() {
+  events "$1" > "$tmp/events.jsonl"
+  events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+  expect_posted "$repair_model"
+  rm -f -- "$tmp/repair-events.jsonl"
+  jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+  jq -Rse '
+    [split("\n")[] | select(startswith("Review events: "))
+      | ltrimstr("Review events: ") | fromjson | .attempts]
+    == [1, 2]
+  ' "$tmp/main.out" > /dev/null
+  expect_sections
+  jq -e '.body | contains("From the fallback.") | not' \
+    "$tmp/comment-payload.json" > /dev/null
+  jq -e '
+    .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  ' "$tmp/review-payload.json" > /dev/null
+}
+
 fence='```'
-fenced=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
-  "${fence}json" "$findings" "$fence")
-events "$fenced" > "$tmp/events.jsonl"
-expect_posted
-[ ! -e "$tmp/opencode-calls.jsonl" ]
-jq -Rse '
-  [split("\n")[] | select(startswith("Review events: "))
-    | ltrimstr("Review events: ") | fromjson | .attempts]
-  == [1]
-' "$tmp/main.out" > /dev/null
-expect_sections
-jq -e --arg fence "$fence" '.body | contains($fence) | not' \
-  "$tmp/comment-payload.json" > /dev/null
-jq -e '.event == "COMMENT"
-  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-' "$tmp/review-payload.json" > /dev/null
-printf 'ok: fenced json findings post without a repair turn\n'
+fallback=$(jq -c '.[0].body = "From the fallback."' <<< "$findings")
+expect_one_repair "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  "${fence}json" "$fallback" "$fence")"
+printf 'ok: a json fence without a findings block is repaired once and posts\n'
 
-# A bare [] line with no findings block is the empty findings array: the review
-# posts MERGE AS IS with no sections, and no repair turn runs.
-events "$(printf '%s\n' "$marker" 'Review summary.' '' '[]')" \
-  > "$tmp/events.jsonl"
-expect_posted
-[ ! -e "$tmp/opencode-calls.jsonl" ]
-jq -e --arg body "$marker"$'\n'"$merge_as_is"$'\nReview summary.' \
-  '.body == $body' "$tmp/comment-payload.json" > /dev/null
-jq -e --arg verdict "$merge_as_is" '
-  .comments == [] and (.body | split("\n") | .[0] == $verdict)
-' "$tmp/review-payload.json" > /dev/null
-printf 'ok: a bare [] findings line posts MERGE AS IS without a repair turn\n'
-
-# A non-empty findings array alone on one line is accepted the same way.
-events "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' "$findings")" \
-  > "$tmp/events.jsonl"
-expect_posted
-[ ! -e "$tmp/opencode-calls.jsonl" ]
-expect_sections
-jq -e '
-  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-' "$tmp/review-payload.json" > /dev/null
-printf 'ok: a non-empty one-line findings array posts without a repair turn\n'
-
-# Regression: a plain fence holding an example array comes before the real
-# findings in a json fence. The example is valid JSON, yet only the json fence
-# is the review's findings.
-example=$(jq -c '[.[0] | .body = "Example finding."]' <<< "$findings")
-examples=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
-  'The findings take this shape:' '' "$fence" "$example" "$fence" '' \
-  "${fence}json" "$findings" "$fence")
-events "$examples" > "$tmp/events.jsonl"
-expect_posted
-[ ! -e "$tmp/opencode-calls.jsonl" ]
-expect_sections
-jq -e '.body | contains("Example finding.") | not' \
-  "$tmp/comment-payload.json" > /dev/null
-jq -e '
-  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-' "$tmp/review-payload.json" > /dev/null
-printf 'ok: a plain-fence example is ignored in favour of the json fence\n'
-
-# With no findings block, a plain fence holding an example array comes before
-# the real findings on a bare one-line array. The example line inside the fence
-# is never the review's findings.
-examples=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
-  'The findings take this shape:' '' "$fence" "$example" "$fence" '' \
-  "$findings")
-events "$examples" > "$tmp/events.jsonl"
-expect_posted
-[ ! -e "$tmp/opencode-calls.jsonl" ]
-expect_sections
-jq -e '.body | contains("Example finding.") | not' \
-  "$tmp/comment-payload.json" > /dev/null
-jq -e '
-  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-  and (.body | contains("Example finding.") | not)
-' "$tmp/review-payload.json" > /dev/null
-printf 'ok: a plain-fence example is ignored in favour of the bare array line\n'
+expect_one_repair "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  "$fallback")"
+printf 'ok: a bare array line without a findings block is repaired once\n'
 
 # A shell code block in the summary is an example, not review text: the marker
 # comment keeps the prose around it but none of the fence.
@@ -453,6 +404,23 @@ jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[0] == $verdict' \
 grep -qi -- 'warning' "$tmp/main.err"
 printf 'ok: mismatched verdict warns and posts the verdict derived from JSON\n'
 
+# An empty findings block is a complete review: it posts MERGE AS IS with no
+# MUST or SHOULD section, and no repair turn runs.
+events "$(reply "$merge_as_is" '[]' 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+jq -e --arg body "$marker"$'\n'"$merge_as_is"$'\nReview summary.' \
+  '.body == $body' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '
+  .comments == [] and (.body | split("\n") | .[0] == $verdict)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: an empty findings block posts MERGE AS IS without a repair turn\n'
+
 # Context and added lines stay inline; a deleted line and a line outside the
 # hunk become bullets in the review body.
 placed=$(jq -c . <<'JSON'
@@ -495,6 +463,35 @@ jq -e '
     | map(select(. == "- a.txt (SHOULD): Off the diff.")) | length == 1)
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: null path or line findings are marker bullets, not inline comments\n'
+
+# Thirty findings with 1500-character bodies of short lines render past 60000
+# characters, since each line break is indented. The marker comment stays within
+# 60000, keeps the bullets that fit and counts the rest; the review keeps every
+# finding, inline on lines 1 and 2 and as body bullets for line 9.
+long=$(jq -nc '[range(30) as $k | {
+  path: "a.txt", line: ([2, 1, 9][$k % 3]), side: "RIGHT",
+  severity: (if $k % 2 == 0 then "MUST" else "SHOULD" end),
+  body: ("Finding \($k).\n" + ([range(740) | "x"] | join("\n")))
+}]')
+events "$(reply "$fix_first" "$long" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body
+  | length <= 60000
+    and (split("\n") as $lines
+      | ($lines | map(select(test("^- a\\.txt:[0-9]+: Finding [0-9]+\\.$")))
+        | length) as $shown
+      | $shown >= 1 and $shown < 30
+        and ($lines | any(.[];
+          . == "\(30 - $shown) more findings in the inline review")))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --argjson long "$long" '
+  .body as $review
+  | .comments == ($long | map(select(.line != 9) | {path, line, side, body}))
+    and all($long[] | select(.line == 9); . as $f
+      | $review | contains("- a.txt:9 (\($f.severity)): \($f.body)"))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: marker comment is capped at 60000 and counts the findings left out\n'
+printf 'ok: the capped review still carries every finding\n'
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" \
   "$(jq -cn '{type: "error", timestamp: 3, sessionID: "ses_test",

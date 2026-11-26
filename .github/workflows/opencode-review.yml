@@ -177,11 +177,12 @@ jobs:
             No praise.
 
             At the very end of the reply, append a JSON array in an HTML comment
-            on three lines exactly as shown, or put the same array in a fenced
-            ```json block. Every finding must be in that one block. The path is relative
-            to the repo root and line is the new-file line number shown on the
-            RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
-            SHOULD. The commit is optional; body is at most 1500 characters.
+            on three lines exactly as shown, without a code fence. The findings
+            must be in that <!-- opencode-findings-json ... --> block and nowhere
+            else. The path is relative to the repo root and line is the new-file
+            line number shown on the RIGHT side of the PR diff. Set side to RIGHT
+            and severity to MUST or SHOULD. The commit is optional; body is at
+            most 1500 characters.
             Include every finding in the array, up to at most 30 findings,
             including those outside the diff and from NOTES.txt, using null for
             line when no RIGHT-side diff line applies and null for path when no

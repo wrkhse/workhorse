@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Posts one opencode review from the event stream of 'opencode run --format json':
 # - one issue comment that starts with the marker: the verdict, the reply's
-#   summary and the MUST and SHOULD findings, rendered from the findings JSON alone;
+#   summary and the MUST and SHOULD findings, rendered from the findings JSON alone
+#   and capped below GitHub's comment limit;
 # - one COMMENT pull request review that ends with the marker and carries the
 #   findings on RIGHT-side diff lines inline.
 #
@@ -14,6 +15,8 @@ set -euo pipefail
 # OPENCODE_API_KEY.
 
 review_marker='<!-- opencode-review -->'
+# GitHub rejects comment bodies over 65536 characters.
+marker_comment_limit=60000
 
 # Logs the stream before reply validation, which still reports malformed input.
 events_summary() {
@@ -124,92 +127,36 @@ summary_text() {
   '
 }
 
-# Writes each findings candidate in the reply to $dir/N, numbered in search order,
-# and prints its kind on a line of its own: the first closed findings block, each
-# closed fenced block tagged ```json, then each line outside every backtick fence
-# that is only a JSON array. An untagged or other-language fence is never a
-# candidate, and no array line inside any fence is one, so a code block in the
-# summary cannot pose as findings. The fenced and line fallbacks apply only when
-# the reply has no findings block opener at all: a malformed required block stays
-# the sole candidate, so it fails and gets the repair turn. Keeps at most 20
-# candidates.
-findings_candidates() {
-  local reply="$1" dir="$2"
-
-  awk -v dir="$dir" '
-    function keep(kind, text,   file) {
-      if (n >= 20) return
-      file = dir "/" ++n
-      printf "%s", text > file
-      close(file)
-      print kind
-    }
-
-    FNR == 1 { pass++; open = 0; body = ""; fenced = 0 }
-    pass >= 2 && present { exit }
-    pass == 1 && /^[[:space:]]*<!-- opencode-findings-json/ { present = 1 }
-    pass == 1 && done { next }
-    pass == 1 && !open && /^<!-- opencode-findings-json[[:space:]]*$/ {
-      open = 1
-      next
-    }
-    pass == 1 && open && /^-->[[:space:]]*$/ {
-      keep("findings block", body)
-      open = 0
-      done = 1
-      next
-    }
-    pass == 2 && !open && tolower($0) ~ /^[[:space:]]*```json[[:space:]]*$/ {
-      open = 1
-      body = ""
-      next
-    }
-    pass == 2 && open && /^[[:space:]]*```[[:space:]]*$/ {
-      keep("fenced block", body)
-      open = 0
-      next
-    }
-    pass == 3 && /^[[:space:]]*```/ { fenced = !fenced; next }
-    pass == 3 && fenced { next }
-    pass == 3 && /^[[:space:]]*\[[[:space:]]*(\]|\{.*\])[[:space:]]*$/ {
-      keep("JSON array line", $0 "\n")
-    }
-    open { body = body $0 "\n" }
-  ' "$reply" "$reply" "$reply"
+# Prints the lines of the reply's first closed findings block: those between a line
+# that is exactly the opener and the next line that is only -->. Fails when no
+# block is closed.
+findings_block() {
+  awk '
+    !open && /^<!-- opencode-findings-json[[:space:]]*$/ { open = 1; next }
+    open && /^-->[[:space:]]*$/ { found = 1; exit }
+    open { print }
+    END { exit !found }
+  '
 }
 
-# Writes the first findings candidate that validates to $work/findings.json. Every
-# candidate meets the same strict rules. Returns 1 when none does, naming the first
-# candidate's problem, and 2 for other failures.
+# Writes the findings of the reply's closed findings block to $work/findings.json.
+# The block is the only source of findings. Returns 1, naming the problem, when it
+# is missing or its JSON is invalid.
 extract_findings() {
-  local work="$1" dir="$1/candidates" kind i=0
+  local work="$1"
 
-  rm -rf -- "$dir" && mkdir -- "$dir" || return 2
-  findings_candidates "$work/reply" "$dir" > "$dir/kinds" || return 2
-
-  if [ ! -s "$dir/kinds" ]; then
-    printf 'ERROR: review reply has no closed %s block, %s or %s\n' \
-      '<!-- opencode-findings-json ... -->' 'fenced JSON block' \
-      'JSON array line' >&2
+  if ! findings_block < "$work/reply" > "$work/findings-block"; then
+    printf 'ERROR: review reply has no closed %s block\n' \
+      '<!-- opencode-findings-json ... -->' >&2
     return 1
   fi
 
-  while IFS= read -r kind; do
-    i=$((i + 1))
-
-    if validate_findings < "$dir/$i" > "$work/findings.json" 2> "$dir/$i.err"
-    then
-      if [ "$kind" != 'findings block' ]; then
-        printf 'WARNING: took the review findings from a %s.\n' "$kind" >&2
-      fi
-
-      return 0
-    fi
-  done < "$dir/kinds"
-
-  printf 'ERROR: review findings JSON is invalid: %s\n' \
-    "$(cat -- "$dir/1.err")" >&2
-  return 1
+  if ! validate_findings < "$work/findings-block" > "$work/findings.json" \
+    2> "$work/findings.err"; then
+    printf 'ERROR: review findings JSON is invalid: %s\n' \
+      "$(cat -- "$work/findings.err")" >&2
+    return 1
+  fi
 }
 
 # Reads the findings block on stdin and prints the normalized array, or fails naming
@@ -249,10 +196,14 @@ validate_findings() {
 
 # Prints the marker comment payload: the marker, the verdict, the summary, then a
 # MUST and a SHOULD section rendered from the findings JSON, each omitted when empty.
+# The body stays within marker_comment_limit characters. When the whole comment does
+# not fit, the summary is cut so the marker and verdict remain, findings are added in
+# order until the next one would not fit, and a last line counts the ones left out.
 marker_comment() {
   local verdict="$1" summary="$2" findings="$3"
 
   jq -n --arg marker "$review_marker" --arg verdict "$verdict" \
+    --argjson limit "$marker_comment_limit" \
     --rawfile summary "$summary" --slurpfile findings "$findings" '
     def bullet:
       " (commit \(.commit))" as $suffix
@@ -262,18 +213,32 @@ marker_comment() {
       | "- \($label): \(.body | gsub("\n"; "\n  "))"
         + (if (.commit // "") == "" or (.body | endswith($suffix)) then ""
           else $suffix end);
-    def section($severity):
-      [$findings[0][] | select(.severity == $severity) | bullet]
-      | if . == [] then empty else "**\($severity)**\n" + join("\n") end;
 
-    ($summary | rtrimstr("\n")) as $text
-    | ([$marker, $verdict] + (if $text == "" then [] else [$text] end)
-      | join("\n")) as $head
-    | {body: ([
-        $head,
-        section("MUST"),
-        section("SHOULD")
-      ] | join("\n\n"))}
+    # Room kept for the line that counts the findings left out.
+    ($limit - 100) as $budget
+    | "\n\n(Summary truncated.)" as $cut
+    | ($summary | rtrimstr("\n")) as $text
+    | ([$marker, $verdict] | join("\n")) as $top
+    | ($top + (if $text == "" then "" else "\n" + $text end)) as $head
+    | ($findings[0] | map(select(.severity == "MUST"))
+        + map(select(.severity == "SHOULD"))) as $ordered
+    | [$ordered | to_entries[] | .key as $i | .value
+        | (if $i == 0 or $ordered[$i - 1].severity != .severity
+          then "\n\n**\(.severity)**\n" else "\n" end) + bullet] as $pieces
+    | ($head + ($pieces | add // "")) as $whole
+    | if ($whole | length) <= $limit then {body: $whole}
+      else
+        (if ($head | length) <= $budget then $head
+          else $top + "\n"
+            + $text[:$budget - ($top | length) - 1 - ($cut | length)] + $cut
+          end) as $start
+        | reduce $pieces[] as $piece ({text: $start, n: 0, full: false};
+            if .full or ((.text + $piece) | length) > $budget then .full = true
+            else .text += $piece | .n += 1 end)
+        | (($pieces | length) - .n) as $left
+        | {body: (.text + (if $left == 0 then ""
+            else "\n\n\($left) more findings in the inline review" end))}
+      end
   '
 }
 
@@ -603,7 +568,10 @@ prepare() {
     0) ;;
     1)
       repair_reply "$events" "$repair_events" || return 1
-      validate_reply "$repair_events" "$work" || return 1
+      if ! validate_reply "$repair_events" "$work"; then
+        echo 'ERROR: the repaired review reply is still invalid; not posting.' >&2
+        return 1
+      fi
       ;;
     *) return 1 ;;
   esac
