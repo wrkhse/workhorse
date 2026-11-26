@@ -175,18 +175,21 @@ missing_bullets() {
     # or null when the finding names no commit and its body must match with nothing after it.
     def commit_suffix:
       if (.commit | type) == "string" then " (commit \(.commit))" else null end;
+    def bullet_text: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))";
+    # The commit suffix the bullet appends after its body, or null when the finding
+    # names no commit or its body already ends with the suffix.
+    def appended_suffix: commit_suffix as $suffix
+      | if $suffix == null or (bullet_text | endswith($suffix)) then null else $suffix end;
     # The rendered bullet, with the commit suffix unless the body already ends with it.
-    def bullet: commit_suffix as $suffix
-      | "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))" as $text
-      | $text + (if $suffix == null or ($text | endswith($suffix)) then "" else $suffix end);
-    # A body line matches exactly; the last may also be followed by exactly the commit
-    # suffix of the same finding.
+    def bullet: bullet_text + (appended_suffix // "");
+    # A body line matches exactly. When the bullet appends a commit suffix, the last
+    # line matches only when followed by exactly that suffix, so a reply bullet
+    # without it does not count as the finding written.
     def line_matches($want; $last; $suffix): trimmed as $have
-      | $have == $want
-        or ($last and $suffix != null and $have == $want + $suffix);
+      | if $last and $suffix != null then $have == $want + $suffix else $have == $want end;
     def written:
       ("- \(.path):\(.line)") as $head
-      | commit_suffix as $suffix
+      | appended_suffix as $suffix
       | (.body | split("\n") | map(trimmed)) as $body
       | ($body | length) as $count
       | ($reply | split("\n")) as $lines
