@@ -2,13 +2,18 @@
 set -euo pipefail
 
 # Offline fixtures for post-review.sh. A JSONL file stands in for the reviewer's
-# opencode event stream, and a stub gh records every write, so nothing reaches GitHub.
+# opencode event stream, and stub gh and opencode binaries record every call, so
+# nothing reaches GitHub or a model.
 script="$(dirname -- "${BASH_SOURCE[0]}")/post-review.sh"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/test-review-post.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
-FAIL_DELETE=0
+FAIL_CLEANUP=0
+marker='<!-- opencode-review -->'
+fix_first='**Verdict: FIX FIRST**'
+merge_as_is='**Verdict: MERGE AS IS**'
 
-# New-file lines 1 (context), 2 (added) and 3 (context) are in the hunk; old line 2 is deleted.
+# New-file lines 1 (context), 2 (added) and 3 (context) are in the hunk; old
+# line 2 is deleted.
 cat > "$tmp/diff.patch" <<'DIFF'
 diff --git a/a.txt b/a.txt
 --- a/a.txt
@@ -20,8 +25,10 @@ diff --git a/a.txt b/a.txt
  tail
 DIFF
 
-# gh defaults to POST when a body or field is given, as the real one does. Each POST
-# lands in $dir/writes and each body is kept beside the stub for the assertions.
+# gh defaults to POST when a body or field is given, as the real one does. Each
+# POST lands in $dir/writes with its body kept beside the stub; cleanup writes
+# land in $dir/cleanup-attempts. FAIL_CLEANUP=1 lists one older marker comment
+# and fails its DELETE and every GraphQL call.
 cat > "$tmp/gh" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -58,8 +65,9 @@ case "$method $endpoint" in
     printf '%s\n' '{"node_id":"PRR_test"}'
     ;;
   'GET repos/'*'/issues/'*'/comments')
-    if [ "${FAIL_DELETE:-0}" = 1 ]; then
-      printf '%s\n' '[{"id":122,"user":{"login":"github-actions[bot]"},"body":"<!-- opencode-review -->"}]'
+    if [ "${FAIL_CLEANUP:-0}" = 1 ]; then
+      jq -cn '[{id: 122, user: {login: "github-actions[bot]"},
+        body: "<!-- opencode-review -->"}]'
     else
       printf '[]\n'
     fi
@@ -71,12 +79,21 @@ case "$method $endpoint" in
     ;;
   *' graphql')
     case "$query" in
+      *mutation*) printf 'graphql mutation\n' >> "$dir/cleanup-attempts" ;;
+    esac
+
+    if [ "${FAIL_CLEANUP:-0}" = 1 ]; then
+      echo 'stub gh: simulated GraphQL failure' >&2
+      exit 1
+    fi
+    case "$query" in
       *mutation*)
-        echo "graphql mutation" >> "$dir/writes"
-        printf '%s\n' '{"data":{"minimizeComment":{"minimizedComment":{"isMinimized":true}}}}'
+        jq -cn '{data: {minimizeComment: {minimizedComment: {isMinimized: true}}}}'
         ;;
-      *) printf '%s\n' '{"data":{"repository":{"pullRequest":{"reviews":{"nodes":[],
-           "pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}' ;;
+      *)
+        jq -cn '{data: {repository: {pullRequest: {reviews: {nodes: [],
+          pageInfo: {hasNextPage: false, endCursor: null}}}}}}'
+        ;;
     esac
     ;;
   *)
@@ -88,58 +105,74 @@ esac
 STUB
 chmod +x "$tmp/gh"
 
-# The first call seeds EVENTS; only the second may emit the repaired reply.
+# opencode is only ever the repair turn. It records its arguments and its last,
+# positional, argument (the repair prompt), then prints the repair fixture.
 cat > "$tmp/opencode" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 dir=$(dirname -- "$0")
 
-if [ ! -f "$dir/invalid-events.jsonl" ]; then
-  echo 'stub opencode: unexpected invocation without a fixture' >&2
+jq -cn --args '$ARGS.positional' -- "$@" >> "$dir/opencode-calls.jsonl"
+printf '%s' "${!#}" > "$dir/repair-prompt"
+
+if [ ! -f "$dir/repair-events.jsonl" ]; then
+  echo 'stub opencode: no repair fixture' >&2
   exit 2
 fi
 
-jq -cn --args '$ARGS.positional' -- "$@" >> "$dir/opencode-calls.jsonl"
-case "$(awk 'END { print NR }' "$dir/opencode-calls.jsonl")" in
-  1) cat -- "$dir/invalid-events.jsonl" ;;
-  2) cat -- "$dir/valid-events.jsonl" ;;
-  *) echo 'stub opencode: unexpected extra invocation' >&2; exit 2 ;;
-esac
+cat -- "$dir/repair-events.jsonl"
 STUB
 chmod +x "$tmp/opencode"
 
-# A reviewer reply: the marker, an optional verdict line, a summary, bullets and the findings block.
-reply() {
-  local verdict=$1 findings=$2
-
-  printf '%s\n' '<!-- opencode-review -->'
-  [ -z "$verdict" ] || printf '%s\n' "$verdict"
-  printf '%s\n' 'Review summary.' '' '**MUST**' '- a.txt:2 Fix this.' '' \
-    '<!-- opencode-findings-json' "$findings" '-->'
-}
-
-# One opencode "run --format json" stream: step_start, the reply as a finished text event,
-# any extra raw event lines, then step_finish.
-write_events() {
+# One 'opencode run --format json' stream: step_start, the reply as a finished
+# text event when there is one, any extra raw event lines, then step_finish.
+events() {
   local text=$1
   shift
 
-  {
-    jq -cn '{type: "step_start", timestamp: 1, sessionID: "ses_test", part: {type: "step-start"}}'
+  jq -cn '{type: "step_start", timestamp: 1, sessionID: "ses_test",
+    part: {type: "step-start"}}'
+
+  if [ -n "$text" ]; then
     jq -cn --arg text "$text" '{type: "text", timestamp: 2, sessionID: "ses_test",
       part: {type: "text", text: $text, time: {start: 1, end: 2}}}'
+  fi
+
+  if [ "$#" -gt 0 ]; then
     printf '%s\n' "$@"
-    jq -cn '{type: "step_finish", timestamp: 3, sessionID: "ses_test",
-      part: {type: "step-finish", reason: "stop"}}'
-  } > "$tmp/events.jsonl"
+  fi
+
+  jq -cn '{type: "step_finish", timestamp: 3, sessionID: "ses_test",
+    part: {type: "step-finish", reason: "stop"}}'
+}
+
+# A reviewer reply: the marker, an optional verdict line, any prose lines, then
+# the findings block with the findings on one line.
+reply() {
+  local verdict=$1 findings=$2
+  shift 2
+
+  printf '%s\n' "$marker"
+
+  if [ -n "$verdict" ]; then
+    printf '%s\n' "$verdict"
+  fi
+
+  if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$@" ''
+  fi
+
+  printf '%s\n' '<!-- opencode-findings-json' "$findings" '-->'
 }
 
 run_main() {
-  rm -f -- "$tmp/writes" "$tmp/comment-payload.json" "$tmp/review-payload.json" "$tmp/cleanup-attempts"
+  rm -f -- "$tmp/writes" "$tmp/comment-payload.json" "$tmp/review-payload.json" \
+    "$tmp/cleanup-attempts" "$tmp/opencode-calls.jsonl" "$tmp/repair-prompt"
 
-  GH="$tmp/gh" OPENCODE="$tmp/opencode" MODEL="${1:-}" FAIL_DELETE="$FAIL_DELETE" \
-    REPO=owner/repo PR=7 GH_TOKEN=test DIFF="$tmp/diff.patch" \
-    EVENTS="$tmp/events.jsonl" OUT="$tmp/out" bash "$script" > "$tmp/main.out" 2> "$tmp/main.err"
+  GH="$tmp/gh" OPENCODE="$tmp/opencode" MODEL="${1:-}" \
+    FAIL_CLEANUP="$FAIL_CLEANUP" REPO=owner/repo PR=7 GH_TOKEN=test \
+    DIFF="$tmp/diff.patch" EVENTS="$tmp/events.jsonl" OUT="$tmp/out" \
+    bash "$script" > "$tmp/main.out" 2> "$tmp/main.err"
 }
 
 expect_posted() {
@@ -148,16 +181,18 @@ expect_posted() {
     return 1
   fi
 
-  printf '%s\n' 'POST repos/owner/repo/issues/7/comments' 'POST repos/owner/repo/pulls/7/reviews' \
-    > "$tmp/expected-writes"
+  printf '%s\n' 'POST repos/owner/repo/issues/7/comments' \
+    'POST repos/owner/repo/pulls/7/reviews' > "$tmp/expected-writes"
   diff -u -- "$tmp/expected-writes" "$tmp/writes"
 }
 
-# A rejected stream exits non-zero, names the reason on stderr when one is given, and writes nothing.
+# A rejected stream exits non-zero, names the reason on stderr when one is
+# given, and writes nothing.
 expect_rejected() {
   local reason=$1
+  shift
 
-  if run_main; then
+  if run_main "$@"; then
     echo 'post-review.sh accepted an invalid event stream' >&2
     return 1
   fi
@@ -173,33 +208,280 @@ expect_rejected() {
   fi
 }
 
-findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
-  {"path":"a.txt","line":9,"side":"RIGHT","severity":"SHOULD","body":"Off the diff."}]'
-write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
+# The marker comment holds each finding of $findings exactly once, as a
+# '- path:line: body' bullet under its own severity header, MUST first.
+expect_sections() {
+  jq -e '
+    def at($s): (map(select(. == $s)) | length) as $n
+      | if $n == 1 then index($s) else error("\($n) lines equal \($s)") end;
+    .body | split("\n")
+    | at("**MUST**") < at("- a.txt:2: Fix this.")
+      and at("- a.txt:2: Fix this.") < at("**SHOULD**")
+      and at("**SHOULD**") < at("- a.txt:9: Off the diff.")
+  ' "$tmp/comment-payload.json" > /dev/null
+}
+
+# One MUST on the added line 2 and one SHOULD on line 9, outside the diff.
+findings=$(jq -c . <<'JSON'
+[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+ {"path":"a.txt","line":9,"side":"RIGHT","severity":"SHOULD","body":"Off the diff."}]
+JSON
+)
+
+# Model-written sections that disagree with the JSON; the comment must not keep them.
+prose=('Review summary.' '' '**MUST**' '- a.txt:3: Stale model claim.' '' \
+  '**SHOULD**' '- a.txt:4: Stale model claim too.')
+
+events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
-jq -e '.body | startswith("<!-- opencode-review -->\n")
-  and (split("\n") | any(. == "**Verdict: FIX FIRST**") and any(. == "Review summary."))
+[ ! -s "$tmp/cleanup-attempts" ]
+jq -e --arg marker "$marker" --arg verdict "$fix_first" '
+  .body | split("\n")
+  | .[0] == $marker and .[1] == $verdict and any(.[]; . == "Review summary.")
+    and all(.[]; contains("Stale model claim") | not)
 ' "$tmp/comment-payload.json" > /dev/null
+expect_sections
 jq -e '.event == "COMMENT"
   and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-  and (.body | split("\n") | any(. == "- a.txt:9 (SHOULD): Off the diff."))
+  and (.body | split("\n") | any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
 ' "$tmp/review-payload.json" > /dev/null
-printf 'ok: valid reply posts the marker comment and a COMMENT review\n'
+printf 'ok: valid reply renders its findings from JSON and posts a COMMENT review\n'
+printf 'ok: normal posting makes no cleanup mutations\n'
 
-write_events "$(reply '' "$findings")"
-expect_rejected Verdict
-printf 'ok: missing verdict fails without posting\n'
+# The terse repair seen on sourcefed#104: the first turn has no text event at
+# all, and the repair holds only the marker, the verdict and the findings block.
+repair_model=fixture/reviewer
+events '' > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se --arg model "$repair_model" '
+  length == 1 and (.[0]
+    | length == 10
+      and .[:9] == ["run", "--model", $model, "--variant", "low",
+        "--format", "json", "--session", "ses_test"]
+      and (.[9] | type == "string" and . != ""))
+' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  | last == 2
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: terse repair reply renders the MUST and SHOULD sections from JSON\n'
 
-write_events "$(reply '**Verdict: FIX FIRST**' '[{"path":"a.txt","line":')"
+# The repair prompt the reviewer received spells out the reply shape, ending
+# with the closed findings block: the opener, one JSON line, and --> alone.
+jq -Rse --arg marker "$marker" '
+  contains($marker) and contains("**Verdict: ")
+  and (split("\n") as $l
+    | [range(0; ($l | length) - 2)
+        | select($l[.] == "<!-- opencode-findings-json"
+          and ($l[. + 1] | try (fromjson | type == "array") catch false)
+          and $l[. + 2] == "-->")]
+    | length == 1)
+' "$tmp/repair-prompt" > /dev/null
+printf '%s\n' \
+  'ok: repair prompt holds the marker, verdict shape and closed findings block'
+
+# sourcefed#105: a findings block that parses but fails validation gets one
+# repair turn, and the valid repair reply posts.
+invalid=$(jq -c '.[0].line = 0' <<< "$findings")
+events "$(reply "$fix_first" "$invalid" 'Review summary.')" > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  | last == 2
+' "$tmp/main.out" > /dev/null
+expect_sections
+printf 'ok: invalid findings JSON is repaired once and the repair posts\n'
+
+# A reply whose findings are only in a json fence or on a bare array line has
+# no findings block, so its first turn fails validation. Exactly one repair turn
+# runs, and its findings block posts; the fallback's findings never do.
+expect_one_repair() {
+  events "$1" > "$tmp/events.jsonl"
+  events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+  expect_posted "$repair_model"
+  rm -f -- "$tmp/repair-events.jsonl"
+  jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+  jq -Rse '
+    [split("\n")[] | select(startswith("Review events: "))
+      | ltrimstr("Review events: ") | fromjson | .attempts]
+    == [1, 2]
+  ' "$tmp/main.out" > /dev/null
+  expect_sections
+  jq -e '.body | contains("From the fallback.") | not' \
+    "$tmp/comment-payload.json" > /dev/null
+  jq -e '
+    .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  ' "$tmp/review-payload.json" > /dev/null
+}
+
+fence='```'
+fallback=$(jq -c '.[0].body = "From the fallback."' <<< "$findings")
+expect_one_repair "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  "${fence}json" "$fallback" "$fence")"
+printf 'ok: a json fence without a findings block is repaired once and posts\n'
+
+expect_one_repair "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  "$fallback")"
+printf 'ok: a bare array line without a findings block is repaired once\n'
+
+# A shell code block in the summary is an example, not review text: the marker
+# comment keeps the prose around it but none of the fence.
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "${fence}bash" \
+  'echo example-command' "$fence")" > "$tmp/events.jsonl"
+expect_posted
+expect_sections
+jq -e --arg fence "$fence" '.body
+  | (split("\n") | any(.[]; . == "Review summary."))
+    and (contains($fence) or contains("example-command") | not)
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: a bash fence in the summary is left out of the marker comment\n'
+
+# A reply with valid findings but no review marker gets exactly one repair
+# turn, and only the repaired reply posts: nothing from the first attempt does.
+first=$(jq -c '.[0].body = "From the first attempt."' <<< "$findings")
+events "$(reply "$fix_first" "$first" 'First summary.' | tail -n +2)" \
+  > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1, 2]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e --arg marker "$marker" '.body
+  | (split("\n") | .[0] == $marker)
+    and (contains("From the first attempt.") or contains("First summary.")
+      | not)
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a reply without the review marker is repaired once and posts\n'
+
+# When the repaired reply still lacks the marker, the run fails, names the
+# marker, and writes nothing after its one repair turn.
+events "$(reply "$fix_first" "$findings" | tail -n +2)" \
+  > "$tmp/repair-events.jsonl"
+expect_rejected "$marker" "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+printf 'ok: a repaired reply still without the marker fails without posting\n'
+
+# A findings block that is present but malformed stays the only candidate: the
+# valid fenced block after it is ignored, and one repair turn supplies the
+# findings that post.
+fence_only=$(jq -c '.[0].body = "From the fence."' <<< "$findings")
+broken=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  '<!-- opencode-findings-json' '[{"path":"a.txt","line":' '-->' '' \
+  "${fence}json" "$fence_only" "$fence")
+events "$broken" > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1, 2]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e '.body | contains("From the fence.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a malformed findings block ignores the fence and repairs once\n'
+
+# A fenced example of a closed findings block, followed by the real block at the
+# end of the reply: the last block is the findings, so the example's placeholder
+# never posts and no repair turn runs.
+example=$(jq -c '.[0].body = "From the example."' <<< "$findings")
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$fence" \
+  '<!-- opencode-findings-json' "$example" '-->' "$fence")" \
+  > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e '.body | contains("From the example.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+    and (tostring | contains("From the example.") | not)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: the last findings block wins over a fenced example block\n'
+
+events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$fix_first" '.body | split("\n") | .[0] == $verdict' \
+  "$tmp/review-payload.json" > /dev/null
+printf 'ok: reply without a verdict posts the verdict derived from JSON\n'
+
+events "$(reply "$fix_first" '[{"path":"a.txt","line":' "${prose[@]}")" \
+  > "$tmp/events.jsonl"
 expect_rejected JSON
 printf 'ok: malformed findings JSON fails without posting\n'
 
-write_events "$(reply '**Verdict: FIX FIRST**' '[
-  {"path":"a.txt","line":1,"side":"RIGHT","severity":"MUST","body":"Context line."},
-  {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Added line."},
-  {"path":"a.txt","line":2,"side":"LEFT","severity":"SHOULD","body":"Deleted line."},
-  {"path":"a.txt","line":7,"side":"RIGHT","severity":"SHOULD","body":"Not in the hunk."}
-]')"
+should_only=$(jq -c . <<'JSON'
+[{"path":"a.txt","line":9,"side":"RIGHT","severity":"SHOULD","body":"Off the diff."}]
+JSON
+)
+events "$(reply "$fix_first" "$should_only" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[1] == $verdict' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[0] == $verdict' \
+  "$tmp/review-payload.json" > /dev/null
+grep -qi -- 'warning' "$tmp/main.err"
+printf 'ok: mismatched verdict warns and posts the verdict derived from JSON\n'
+
+# An empty findings block is a complete review: it posts MERGE AS IS with no
+# MUST or SHOULD section, and no repair turn runs.
+events "$(reply "$merge_as_is" '[]' 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+jq -e --arg body "$marker"$'\n'"$merge_as_is"$'\nReview summary.' \
+  '.body == $body' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '
+  .comments == [] and (.body | split("\n") | .[0] == $verdict)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: an empty findings block posts MERGE AS IS without a repair turn\n'
+
+# Context and added lines stay inline; a deleted line and a line outside the
+# hunk become bullets in the review body.
+placed=$(jq -c . <<'JSON'
+[{"path":"a.txt","line":1,"side":"RIGHT","severity":"MUST","body":"Context line."},
+ {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Added line."},
+ {"path":"a.txt","line":2,"side":"LEFT","severity":"SHOULD","body":"Deleted line."},
+ {"path":"a.txt","line":7,"side":"RIGHT","severity":"SHOULD",
+  "body":"Not in the hunk."}]
+JSON
+)
+events "$(reply "$fix_first" "$placed" 'Review summary.')" > "$tmp/events.jsonl"
 expect_posted
 jq -e '.event == "COMMENT"
   and .comments == [
@@ -207,44 +489,143 @@ jq -e '.event == "COMMENT"
     {path: "a.txt", line: 2, side: "RIGHT", body: "Added line."}
   ]
   and (.body | split("\n")
-    | any(. == "- a.txt:2 (SHOULD): Deleted line.") and any(. == "- a.txt:7 (SHOULD): Not in the hunk."))
+    | any(.[]; . == "- a.txt:2 (SHOULD): Deleted line.")
+      and any(.[]; . == "- a.txt:7 (SHOULD): Not in the hunk."))
 ' "$tmp/review-payload.json" > /dev/null
-printf 'ok: deleted and out-of-hunk lines become bullets; context and added lines stay inline\n'
+printf 'ok: findings outside the diff become review body bullets, not inline\n'
 
-write_events "$(reply '**Verdict: FIX FIRST**' "$findings")" \
-  '{"type":"error","timestamp":3,"sessionID":"ses_test","error":{"name":"APIError","data":{"message":"provider overloaded"}}}'
+unanchored=$(jq -c . <<'JSON'
+[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+ {"path":null,"line":2,"side":"RIGHT","severity":"MUST","body":"General note."},
+ {"path":"a.txt","line":null,"side":"RIGHT","severity":"SHOULD",
+  "body":"Off the diff."}]
+JSON
+)
+events "$(reply "$fix_first" "$unanchored" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body | split("\n") | map(select(startswith("- ")))
+  | (map(select(endswith("General note."))) | length) == 1
+    and (map(select(. == "- a.txt: Off the diff.")) | length) == 1
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n")
+    | map(select(. == "- a.txt (SHOULD): Off the diff.")) | length == 1)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: null path or line findings are marker bullets, not inline comments\n'
+
+# Thirty findings with 1500-character bodies of short lines render past 60000
+# characters, since each line break is indented. The marker comment stays within
+# 60000, keeps the bullets that fit and counts the rest; the review keeps every
+# finding, inline on lines 1 and 2 and as body bullets for line 9.
+long=$(jq -nc '[range(30) as $k | {
+  path: "a.txt", line: ([2, 1, 9][$k % 3]), side: "RIGHT",
+  severity: (if $k % 2 == 0 then "MUST" else "SHOULD" end),
+  body: ("Finding \($k).\n" + ([range(740) | "x"] | join("\n")))
+}]')
+# The line that counts them, after its number.
+left_note=' more findings are in the pull request review'
+left_note+=' (inline comments and body bullets).'
+events "$(reply "$fix_first" "$long" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg note "$left_note" '.body
+  | length <= 60000
+    and (split("\n") as $lines
+      | ($lines | map(select(test("^- a\\.txt:[0-9]+: Finding [0-9]+\\.$")))
+        | length) as $shown
+      | $shown >= 1 and $shown < 30
+        and ($lines | last) == "\(30 - $shown)\($note)")
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --argjson long "$long" '
+  .body as $review
+  | .comments == ($long | map(select(.line != 9) | {path, line, side, body}))
+    and all($long[] | select(.line == 9); . as $f
+      | $review | contains("- a.txt:9 (\($f.severity)): \($f.body)"))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: marker comment is capped at 60000 and counts the findings left out\n'
+printf 'ok: the capped review still carries every finding\n'
+
+# A summary longer than the whole cap is cut, keeping the marker and the
+# derived verdict, and the comment stays within 60000 characters. About 76000
+# characters of prose keeps the reply under Linux's 128 KiB argument limit.
+long_summary=$(jq -nr '
+  [range(800) | "Summary line \(.) " + ("y" * 80)] | join("\n")')
+
+# With no findings, the cut summary is the end of the comment.
+events "$(reply "$merge_as_is" '[]' "$long_summary")" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg marker "$marker" --arg verdict "$merge_as_is" '.body
+  | length <= 60000
+    and endswith("\n\n(Summary truncated.)")
+    and (split("\n") | .[0] == $marker and .[1] == $verdict
+      and .[2] == "Summary line 0 " + ("y" * 80))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '
+  .comments == [] and (.body | split("\n") | .[0] == $verdict)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: an overlong summary is cut and marked (Summary truncated.)\n'
+
+# With a small findings JSON and no model verdict, the comment still carries
+# the verdict derived from the findings. The cut summary fills the budget, so
+# both findings are counted rather than shown; the review keeps them all.
+events "$(reply '' "$findings" "$long_summary")" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg marker "$marker" --arg verdict "$fix_first" --arg note "$left_note" '
+  .body
+  | length <= 60000
+    and (split("\n")
+      | .[0] == $marker and .[1] == $verdict
+        and .[-3:] == ["(Summary truncated.)", "", "2\($note)"])
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$fix_first" '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n") | .[0] == $verdict
+    and any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a truncated summary still posts the verdict derived from JSON\n'
+
+events "$(reply "$fix_first" "$findings" "${prose[@]}")" \
+  "$(jq -cn '{type: "error", timestamp: 3, sessionID: "ses_test",
+    error: {name: "APIError", data: {message: "provider overloaded"}}}')" \
+  > "$tmp/events.jsonl"
 expect_rejected ''
 printf 'ok: an error event fails without posting\n'
 
-repair_model=fixture/reviewer
-write_events "$(reply '**Verdict: FIX FIRST**' '[{"path":"a.txt","line":')"
-mv -- "$tmp/events.jsonl" "$tmp/invalid-events.jsonl"
-write_events "$(reply '**Verdict: FIX FIRST**' \
-  '[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."}]')"
-mv -- "$tmp/events.jsonl" "$tmp/valid-events.jsonl"
-"$tmp/opencode" run --model "$repair_model" --variant low --format json 'Initial review.' > "$tmp/events.jsonl"
-
-expect_posted "$repair_model"
-[ ! -e "$tmp/cleanup-attempts" ]
-jq -se --arg model "$repair_model" '
-  length == 2
-  and .[0] == ["run", "--model", $model, "--variant", "low", "--format", "json", "Initial review."]
-  and (.[1] | length == 10
-    and .[:9] == ["run", "--model", $model, "--variant", "low", "--format", "json", "--session", "ses_test"]
-    and (.[9] | test("[^[:space:]]")))
-' "$tmp/opencode-calls.jsonl" > /dev/null
-jq -e '
-  .body == "<!-- opencode-review -->\n**Verdict: FIX FIRST**\nReview summary.\n\n**MUST**\n- a.txt:2 Fix this."
+with_commit=$(jq -c '
+  .[0] += {body: "Fix this. (commit abc1234)", commit: "abc1234"}
+' <<< "$findings")
+events "$(reply "$fix_first" "$with_commit" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body
+  | (split("\n")
+    | map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 1)
+    and (contains(" (commit abc1234) (commit abc1234)") | not)
 ' "$tmp/comment-payload.json" > /dev/null
-jq -e '.event == "COMMENT"
-  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
-' "$tmp/review-payload.json" > /dev/null
-sed -n 's/^Review events: //p' "$tmp/main.out" "$tmp/main.err" |
-  jq -se 'last | .attempts == 2' > /dev/null
-printf 'ok: invalid, then valid on repair, with both payloads posted\n'
+printf 'ok: marker comment renders the commit suffix exactly once\n'
 
-write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
-FAIL_DELETE=1 expect_posted
-printf 'DELETE repos/owner/repo/issues/comments/122\n' |
-  diff -u -- - "$tmp/cleanup-attempts"
-printf 'ok: a failed cleanup DELETE does not prevent either post or fail the run\n'
+commit_only=$(jq -c '.[0].commit = "abc1234"' <<< "$findings")
+events "$(reply "$fix_first" "$commit_only" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body | split("\n")
+  | map(select(startswith("- a.txt:2: ")))
+    == ["- a.txt:2: Fix this. (commit abc1234)"]
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment appends the missing commit suffix exactly once\n'
+
+footer='[Build evidence run](https://example.com/builds/123)'
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
+  > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg footer "$footer" '.body
+  | (split("\n") | any(.[]; . == "Review summary."))
+    and (contains($footer) | not)
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment strips an arbitrary trailing run footer\n'
+
+events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
+FAIL_CLEANUP=1 expect_posted
+# The failed listing must not lead to any GraphQL mutation.
+printf '%s\n' 'DELETE repos/owner/repo/issues/comments/122' \
+  > "$tmp/expected-cleanup-attempts"
+diff -u -- "$tmp/expected-cleanup-attempts" "$tmp/cleanup-attempts"
+printf 'ok: failed cleanup keeps both posts and exits 0\n'

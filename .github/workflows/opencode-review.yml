@@ -163,31 +163,40 @@ jobs:
                Name the commit, file and line, and say what it hides.
 
             Output, in this exact shape and nothing else. The first line must be
-            the marker below, exactly, and the second line must be the verdict
-            line below, where X is MERGE AS IS when there is no MUST and FIX
+            the marker below, exactly. The posted verdict is derived from the
+            findings JSON: FIX FIRST when any finding is a MUST, MERGE AS IS
+            otherwise. The verdict line below is informational and may be
+            omitted; when given, X is MERGE AS IS when there is no MUST and FIX
             FIRST otherwise:
             <!-- opencode-review -->
             **Verdict: X**
-            A reply without that verdict line right after the marker is invalid.
             Then give a short summary.
 
             List findings as one-line bullets with file:line under **MUST**
             (bugs and every gaming finding) or **SHOULD**. Omit an empty section.
-            The human-readable part is at most 25 lines. No praise.
+            No praise.
+            MUST only when wrong code could merge, or for security or data loss.
+            Edge cases that need an unlikely input, and gaps in tests, are SHOULD.
+            Weigh how likely a failure is and how much it would hurt before
+            choosing a severity.
 
             At the very end of the reply, append a JSON array in an HTML comment
-            on three lines exactly as shown, without a code fence. Use at most 30
-            findings, or [] if none can be placed on the diff. The path is relative
-            to the repo root and line is the new-file line number shown on the
-            RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
-            SHOULD. The commit is optional; body is at most 1500 characters.
-            Findings outside the diff still belong in the bullets, not the array.
+            on three lines exactly as shown, without a code fence. The findings
+            must be in that <!-- opencode-findings-json ... --> block and nowhere
+            else. The path is relative to the repo root and line is the new-file
+            line number shown on the RIGHT side of the PR diff. Set side to RIGHT
+            and severity to MUST or SHOULD. The commit is optional; body is at
+            most 1500 characters.
+            Include every finding in the array, up to at most 30 findings,
+            including those outside the diff and from NOTES.txt, using null for
+            line when no RIGHT-side diff line applies and null for path when no
+            file applies; use [] only when there are no findings.
             <!-- opencode-findings-json
             [{"path":"...","line":12,"side":"RIGHT","severity":"MUST","commit":"abc1234","body":"..."}]
             -->
 
             If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
-            After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the verdict line and the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
+            After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
         shell: bash
         run: |
           set -euo pipefail
