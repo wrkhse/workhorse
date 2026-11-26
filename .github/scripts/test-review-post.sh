@@ -612,6 +612,46 @@ jq -e '.body | split("\n")
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: marker comment appends the missing commit suffix exactly once\n'
 
+# barn#25: model-written commits need not be strings. A number or boolean is
+# coerced to a suffix; an object on an inline finding is dropped. Neither form
+# blocks the review, and no repair turn runs.
+mixed_commit=$(jq -c '
+  .[0].commit = 1234567
+  | .[1].commit = true
+  | . + [{path: "a.txt", line: 3, side: "RIGHT", severity: "SHOULD",
+    body: "Off the diff too.", commit: {sha: "abc"}}]
+' <<< "$findings")
+events "$(reply "$fix_first" "$mixed_commit" 'Review summary.')" \
+  > "$tmp/events.jsonl"
+expect_posted
+grep -Fq -- 'dropping non-scalar finding commit' "$tmp/main.err"
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+jq -e '.body | split("\n") as $lines
+  | ([$lines[] | select(startswith("- a.txt:2: "))]
+      == ["- a.txt:2: Fix this. (commit 1234567)"])
+    and ([$lines[] | select(startswith("- a.txt:9: "))]
+      == ["- a.txt:9: Off the diff. (commit true)"])
+    and ([$lines[] | select(startswith("- a.txt:3: "))]
+      == ["- a.txt:3: Off the diff too."])
+    and ([$lines[] | select(contains("(commit"))]
+      == ["- a.txt:2: Fix this. (commit 1234567)",
+          "- a.txt:9: Off the diff. (commit true)"])
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and (.comments | sort_by(.line) == [
+    {path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."},
+    {path: "a.txt", line: 3, side: "RIGHT", body: "Off the diff too."}
+  ])
+  and (.body | split("\n")
+    | any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: numeric and boolean commits coerce; object commit is dropped\n'
+
 footer='[Build evidence run](https://example.com/builds/123)'
 events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
   > "$tmp/events.jsonl"
