@@ -190,8 +190,9 @@ expect_posted() {
 # given, and writes nothing.
 expect_rejected() {
   local reason=$1
+  shift
 
-  if run_main; then
+  if run_main "$@"; then
     echo 'post-review.sh accepted an invalid event stream' >&2
     return 1
   fi
@@ -346,12 +347,38 @@ jq -e --arg fence "$fence" '.body
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: a bash fence in the summary is left out of the marker comment\n'
 
-# A reply without the review marker is not a review: it fails, names the
-# marker, and writes nothing.
-events "$(reply "$fix_first" "$findings" 'Review summary.' | tail -n +2)" \
+# A reply with valid findings but no review marker gets exactly one repair
+# turn, and only the repaired reply posts: nothing from the first attempt does.
+first=$(jq -c '.[0].body = "From the first attempt."' <<< "$findings")
+events "$(reply "$fix_first" "$first" 'First summary.' | tail -n +2)" \
   > "$tmp/events.jsonl"
-expect_rejected "$marker"
-printf 'ok: a reply without the review marker fails without posting\n'
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1, 2]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e --arg marker "$marker" '.body
+  | (split("\n") | .[0] == $marker)
+    and (contains("From the first attempt.") or contains("First summary.")
+      | not)
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a reply without the review marker is repaired once and posts\n'
+
+# When the repaired reply still lacks the marker, the run fails, names the
+# marker, and writes nothing after its one repair turn.
+events "$(reply "$fix_first" "$findings" | tail -n +2)" \
+  > "$tmp/repair-events.jsonl"
+expect_rejected "$marker" "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+printf 'ok: a repaired reply still without the marker fails without posting\n'
 
 # A findings block that is present but malformed stays the only candidate: the
 # valid fenced block after it is ignored, and one repair turn supplies the
@@ -473,16 +500,18 @@ long=$(jq -nc '[range(30) as $k | {
   severity: (if $k % 2 == 0 then "MUST" else "SHOULD" end),
   body: ("Finding \($k).\n" + ([range(740) | "x"] | join("\n")))
 }]')
+# The line that counts them, after its number.
+left_note=' more findings are in the pull request review'
+left_note+=' (inline comments and body bullets).'
 events "$(reply "$fix_first" "$long" 'Review summary.')" > "$tmp/events.jsonl"
 expect_posted
-jq -e '.body
+jq -e --arg note "$left_note" '.body
   | length <= 60000
     and (split("\n") as $lines
       | ($lines | map(select(test("^- a\\.txt:[0-9]+: Finding [0-9]+\\.$")))
         | length) as $shown
       | $shown >= 1 and $shown < 30
-        and ($lines | any(.[];
-          . == "\(30 - $shown) more findings in the inline review")))
+        and ($lines | last) == "\(30 - $shown)\($note)")
 ' "$tmp/comment-payload.json" > /dev/null
 jq -e --argjson long "$long" '
   .body as $review
@@ -492,6 +521,45 @@ jq -e --argjson long "$long" '
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: marker comment is capped at 60000 and counts the findings left out\n'
 printf 'ok: the capped review still carries every finding\n'
+
+# A summary longer than the whole cap is cut, keeping the marker and the
+# derived verdict, and the comment stays within 60000 characters. About 76000
+# characters of prose keeps the reply under Linux's 128 KiB argument limit.
+long_summary=$(jq -nr '
+  [range(800) | "Summary line \(.) " + ("y" * 80)] | join("\n")')
+
+# With no findings, the cut summary is the end of the comment.
+events "$(reply "$merge_as_is" '[]' "$long_summary")" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg marker "$marker" --arg verdict "$merge_as_is" '.body
+  | length <= 60000
+    and endswith("\n\n(Summary truncated.)")
+    and (split("\n") | .[0] == $marker and .[1] == $verdict
+      and .[2] == "Summary line 0 " + ("y" * 80))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '
+  .comments == [] and (.body | split("\n") | .[0] == $verdict)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: an overlong summary is cut and marked (Summary truncated.)\n'
+
+# With a small findings JSON and no model verdict, the comment still carries
+# the verdict derived from the findings. The cut summary fills the budget, so
+# both findings are counted rather than shown; the review keeps them all.
+events "$(reply '' "$findings" "$long_summary")" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg marker "$marker" --arg verdict "$fix_first" --arg note "$left_note" '
+  .body
+  | length <= 60000
+    and (split("\n")
+      | .[0] == $marker and .[1] == $verdict
+        and .[-3:] == ["(Summary truncated.)", "", "2\($note)"])
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$fix_first" '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n") | .[0] == $verdict
+    and any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a truncated summary still posts the verdict derived from JSON\n'
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" \
   "$(jq -cn '{type: "error", timestamp: 3, sessionID: "ses_test",

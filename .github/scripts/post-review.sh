@@ -237,7 +237,8 @@ marker_comment() {
             else .text += $piece | .n += 1 end)
         | (($pieces | length) - .n) as $left
         | {body: (.text + (if $left == 0 then ""
-            else "\n\n\($left) more findings in the inline review" end))}
+            else "\n\n\($left) more findings are in the pull request review"
+              + " (inline comments and body bullets)." end))}
       end
   '
 }
@@ -315,9 +316,9 @@ review_payload() {
           $verdict,
           (if $placed == [] then "No findings to place on the diff."
             else "\($inline | length) of \($placed | length)"
-              + " findings are inline comments." end)
-            + " The full review is in the opencode review comment"
-            + " on this pull request.",
+              + " findings are inline comments. This review holds every"
+              + " finding, inline or as a bullet below; the opencode review"
+              + " comment may leave some out when it is too long." end),
           (if $bullets == [] then empty
             else "Findings that could not be posted inline:\n\n"
               + ($bullets | join("\n")) end),
@@ -469,9 +470,9 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# Returns 1 for missing or invalid findings JSON, 2 for other failures, including a
-# reply without the review marker. Findings are checked first, so only a reply
-# whose findings JSON is valid can fail on the marker alone, which is not repaired.
+# Returns 1, naming the problem, for a reply a repair turn can fix: no text, a
+# missing or invalid findings block, or no review marker. Returns 2 for other
+# failures, such as an errored run.
 validate_reply() {
   local events="$1" work="$2" verdict model_verdict
 
@@ -487,7 +488,7 @@ validate_reply() {
 
   if ! grep -qF -- "$review_marker" "$work/reply"; then
     printf 'ERROR: review reply has no %s marker\n' "$review_marker" >&2
-    return 2
+    return 1
   fi
 
   verdict=$(jq -r '
@@ -556,8 +557,9 @@ repair_reply() {
   fi
 }
 
-# Validates before posting; only missing or invalid findings in the first reply
-# can trigger a repair.
+# Validates before posting. A first reply that validation can repair (no findings
+# block, invalid findings JSON or no marker) gets one repair turn; a repaired reply
+# that is still invalid fails with the reason validation names.
 prepare() {
   local events="$1" diff="$2" work="$3" repair_events="$4"
   local status=0 verdict
