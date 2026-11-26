@@ -314,6 +314,31 @@ jq -e '.event == "COMMENT"
 printf '%s %s\n' 'ok: two findings with the same body keep the written a.txt:2 bullet once' \
   'and add the missing a.txt:5 bullet once'
 
+# A prefix collision: two MUST findings share a.txt:2, and one body is a prefix of the other.
+# The reply wrote only the longer bullet, so matching by prefix would treat "Fix this." as
+# written; the comment must keep the written bullet once and add the shorter one once.
+prefix_findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+  {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this. now."}]'
+write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  'Review summary.' '' '**MUST**' '- a.txt:2: Fix this. now.' '' \
+  '<!-- opencode-findings-json' "$prefix_findings" '-->')"
+expect_posted
+jq -e '.body | split("\n")
+  | (map(select(. == "**MUST**")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this.")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this. now.")) | length == 1)
+    and (index("**MUST**") < index("- a.txt:2: Fix this."))
+    and (index("**MUST**") < index("- a.txt:2: Fix this. now."))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [
+    {path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."},
+    {path: "a.txt", line: 2, side: "RIGHT", body: "Fix this. now."}
+  ]
+' "$tmp/review-payload.json" > /dev/null
+printf '%s %s\n' 'ok: a written bullet whose body extends another finding at the same line' \
+  'keeps both bullets once each'
+
 # A fully populated reply: every JSON finding already has its bullet under its own
 # header, so the comment is the reply's human part exactly, with no explanation line
 # and no repeated bullet.

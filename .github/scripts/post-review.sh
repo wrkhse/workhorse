@@ -173,9 +173,16 @@ missing_bullets() {
     def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
       + (if has("commit") then " (commit \(.commit))" else "" end);
     def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
-    # The last body line may be followed by more text, such as a commit suffix.
+    # The suffix a rendered bullet carries after its last body line: " (commit <hex>)".
+    def commit_suffix:
+      startswith(" (commit ") and endswith(")")
+      and (ltrimstr(" (commit ") | rtrimstr(")")
+        | length > 0
+          and (explode | all(. >= 48 and . <= 57 or . >= 97 and . <= 102 or . >= 65 and . <= 70)));
+    # The last body line matches exactly, or followed only by the commit suffix.
     def line_matches($want; $last): trimmed as $have
-      | if $last then $have | startswith($want) else $have == $want end;
+      | $have == $want
+        or ($last and ($have | startswith($want)) and ($have | ltrimstr($want) | commit_suffix));
     def written:
       ("- \(.path):\(.line)") as $head
       | (.body | split("\n") | map(trimmed)) as $body
