@@ -10,6 +10,7 @@ trap 'rm -rf -- "$tmp"' EXIT
 FAIL_CLEANUP=0
 marker='<!-- opencode-review -->'
 fix_first='**Verdict: FIX FIRST**'
+merge_as_is='**Verdict: MERGE AS IS**'
 
 # New-file lines 1 (context), 2 (added) and 3 (context) are in the hunk; old
 # line 2 is deleted.
@@ -322,6 +323,44 @@ jq -e '.event == "COMMENT"
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: fenced json findings post without a repair turn\n'
 
+# A bare [] line with no findings block is the empty findings array: the review
+# posts MERGE AS IS with no sections, and no repair turn runs.
+events "$(printf '%s\n' "$marker" 'Review summary.' '' '[]')" \
+  > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -e --arg body "$marker"$'\n'"$merge_as_is"$'\nReview summary.' \
+  '.body == $body' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '
+  .comments == [] and (.body | split("\n") | .[0] == $verdict)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a bare [] findings line posts MERGE AS IS without a repair turn\n'
+
+# A findings block that is present but malformed stays the only candidate: the
+# valid fenced block after it is ignored, and one repair turn supplies the
+# findings that post.
+fence_only=$(jq -c '.[0].body = "From the fence."' <<< "$findings")
+broken=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  '<!-- opencode-findings-json' '[{"path":"a.txt","line":' '-->' '' \
+  "${fence}json" "$fence_only" "$fence")
+events "$broken" > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1, 2]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e '.body | contains("From the fence.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a malformed findings block ignores the fence and repairs once\n'
+
 events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
 jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
@@ -341,7 +380,6 @@ JSON
 )
 events "$(reply "$fix_first" "$should_only" 'Review summary.')" > "$tmp/events.jsonl"
 expect_posted
-merge_as_is='**Verdict: MERGE AS IS**'
 jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[1] == $verdict' \
   "$tmp/comment-payload.json" > /dev/null
 jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[0] == $verdict' \

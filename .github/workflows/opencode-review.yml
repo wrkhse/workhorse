@@ -163,12 +163,13 @@ jobs:
                Name the commit, file and line, and say what it hides.
 
             Output, in this exact shape and nothing else. The first line must be
-            the marker below, exactly, and the second line must be the verdict
-            line below, where X is MERGE AS IS when there is no MUST and FIX
+            the marker below, exactly. The posted verdict is derived from the
+            findings JSON: FIX FIRST when any finding is a MUST, MERGE AS IS
+            otherwise. The verdict line below is informational and may be
+            omitted; when given, X is MERGE AS IS when there is no MUST and FIX
             FIRST otherwise:
             <!-- opencode-review -->
             **Verdict: X**
-            A reply without that verdict line right after the marker is invalid.
             Then give a short summary.
 
             List findings as one-line bullets with file:line under **MUST**
@@ -176,7 +177,8 @@ jobs:
             The human-readable part is at most 25 lines. No praise.
 
             At the very end of the reply, append a JSON array in an HTML comment
-            on three lines exactly as shown, without a code fence. The path is relative
+            on three lines exactly as shown, or put the same array in a fenced
+            ```json block. Every finding must be in that one block. The path is relative
             to the repo root and line is the new-file line number shown on the
             RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
             SHOULD. The commit is optional; body is at most 1500 characters.
@@ -189,7 +191,7 @@ jobs:
             -->
 
             If asked to summarize, repeat the review itself verbatim; never describe what you read or did.
-            After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the verdict line and the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
+            After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
         shell: bash
         run: |
           set -euo pipefail
