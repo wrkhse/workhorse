@@ -59,4 +59,4 @@ Master issues: [barn#1](https://github.com/wrkhse/barn/issues/1),
 [tack#1](https://github.com/wrkhse/tack/issues/1),
 [sourcefed#3](https://github.com/wrkhse/sourcefed/issues/3),
 [Chauffeur v2#43](https://github.com/wrkhse/chauffeur/issues/43),
-[o11y#1](https://github.com/wrkhse/o11y/issues/1).
+[tack#90](https://github.com/wrkhse/tack/issues/90): telemetry, a tack module.

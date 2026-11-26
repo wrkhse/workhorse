@@ -48,7 +48,8 @@ can't remove without the project stopping being itself, and the part that can
 be extended without end. I strip the core until nothing more can go.
 Everything else is built outward and plugs into it. Extensions load at run
 time, and connections are how people, programs and agents reach it. In
-sourcefed, a plugin extends the daemon, while the CLI connects to it.
+sourcefed, a plugin is a Luau hook the daemon runs in a barn stall, while the
+CLI connects to it.
 
 ```mermaid
 flowchart TB
@@ -72,14 +73,15 @@ not built yet:
 | Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins                                               | tack: harness adapters, CLI, `ask_chauffeur`; sourcefed sdk hooks              | Rust core in progress (#57)                                                                |
 | atelier   | a CI engine for monorepos                                                                   | presets: gates per language, metrics, agent review                                             | moon and GitHub checks                                                         | Rust gate presets shipped (v0.2.0-rc.1, #87); metrics (#88) and agent review (#89) open    |
 
-tack is how every other project reaches agents: sourcefed, Chauffeur and
-atelier are each a tack plugin, so their connections are the ones tack builds.
+tack is how tools reach agents: sourcefed and Chauffeur are tools built on tack,
+so their connections are the ones tack builds. atelier runs its gates through
+moon and GitHub checks.
 barn is the sandbox and runtime-stall engine that tack links as a library.
 tack, chauffeur and sourcefed depend on barn to run their Luau. Plugin code
 runs only in barn's runtime stalls: supervised, sandboxed processes that speak
 tack's framed NDJSON protocol. No runtime loads into tack's daemon. Projects
-extend each other the same way they extend themselves: Chauffeur plugs into
-sourcefed through tack's sdk hooks.
+extend each other the same way they extend themselves: Chauffeur's triage
+plugin runs on sourcefed through tack's sdk hooks.
 
 Where things run:
 

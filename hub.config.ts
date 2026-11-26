@@ -219,9 +219,7 @@ export const hub = {
    * Repositories the roadmap follows by their plan issue, with no pages on the
    * site yet.
    */
-  tracked: [
-    { name: "o11y", repo: `${owner}/o11y`, plan: 1 },
-  ] satisfies Tracked[],
+  tracked: [] satisfies Tracked[],
   history: [
     {
       repo: `${owner}/daemon-v0`,
