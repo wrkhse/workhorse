@@ -170,13 +170,15 @@ missing_bullets() {
   local reply="$1" findings="$2" severity="$3"
 
   jq -r --rawfile reply "$reply" --arg severity "$severity" '
-    def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
-      + (if has("commit") then " (commit \(.commit))" else "" end);
     def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
     # The suffix a rendered bullet carries after its last body line, " (commit <commit>)",
     # or null when the finding names no commit and its body must match with nothing after it.
     def commit_suffix:
       if (.commit | type) == "string" then " (commit \(.commit))" else null end;
+    # The rendered bullet, with the commit suffix unless the body already ends with it.
+    def bullet: commit_suffix as $suffix
+      | "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))" as $text
+      | $text + (if $suffix == null or ($text | endswith($suffix)) then "" else $suffix end);
     # A body line matches exactly; the last may also be followed by exactly the commit
     # suffix of the same finding.
     def line_matches($want; $last; $suffix): trimmed as $have

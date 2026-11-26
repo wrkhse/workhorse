@@ -339,12 +339,12 @@ jq -e '.event == "COMMENT"
 printf '%s %s\n' 'ok: a written bullet whose body extends another finding at the same line' \
   'keeps both bullets once each'
 
-# A commit-suffix collision: two MUST findings share a.txt:2, and the second carries a commit
-# whose rendered suffix makes its bullet extend the first one's. The reply wrote only the
-# suffixed bullet, so the comment must keep it once and add the plain bullet once.
+# A commit-suffix collision: two MUST findings share a.txt:2 and the body "Fix this.", and the
+# second carries a commit, so only its rendered " (commit abc1234)" suffix tells the bullets apart.
+# The reply wrote only the suffixed bullet, so the comment must keep it once, never suffix it
+# twice, and add the plain bullet once.
 commit_findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
-  {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this. (commit abc1234)",
-   "commit":"abc1234"}]'
+  {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this.","commit":"abc1234"}]'
 write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
   'Review summary.' '' '**MUST**' '- a.txt:2: Fix this. (commit abc1234)' '' \
   '<!-- opencode-findings-json' "$commit_findings" '-->')"
@@ -353,6 +353,7 @@ jq -e '.body | split("\n")
   | (map(select(. == "**MUST**")) | length == 1)
     and (map(select(. == "- a.txt:2: Fix this.")) | length == 1)
     and (map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this. (commit abc1234) (commit abc1234)")) | length == 0)
     and (index("**MUST**") < index("- a.txt:2: Fix this."))
     and (index("**MUST**") < index("- a.txt:2: Fix this. (commit abc1234)"))
 ' "$tmp/comment-payload.json" > /dev/null
