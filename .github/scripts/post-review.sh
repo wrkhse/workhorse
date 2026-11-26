@@ -160,17 +160,32 @@ marker_comment() {
   ' < "$1"
 }
 
-# Renders, as bullets, the findings of one severity whose body the human-readable
-# reply does not already hold, either as written or indented the way a bullet
-# continues it. Prints nothing when the reply holds them all.
+# Renders, as bullets, the findings of one severity that the human-readable reply
+# does not already hold as its own bullet: a line '- path:line: body' or the older
+# '- path:line body', with any further body lines on the lines after it, as
+# written or indented the way a bullet continues it. Comparison is literal, so a
+# body quoted elsewhere or the same body at another path or line does not count.
+# Prints nothing when the reply holds them all.
 missing_bullets() {
   local reply="$1" findings="$2" severity="$3"
 
   jq -r --rawfile reply "$reply" --arg severity "$severity" '
     def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
       + (if has("commit") then " (commit \(.commit))" else "" end);
-    def written: .body as $body
-      | $reply | (contains($body) or contains($body | gsub("\n"; "\n  ")));
+    def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
+    # The last body line may be followed by more text, such as a commit suffix.
+    def line_matches($want; $last): trimmed as $have
+      | if $last then $have | startswith($want) else $have == $want end;
+    def written:
+      ("- \(.path):\(.line)") as $head
+      | (.body | split("\n") | map(trimmed)) as $body
+      | ($body | length) as $count
+      | ($reply | split("\n")) as $lines
+      | any(range(0; ($lines | length) - $count + 1); . as $i
+          | ($lines[$i] | line_matches($head + ": " + $body[0]; $count == 1)
+              or line_matches($head + " " + $body[0]; $count == 1))
+            and all(range(1; $count); . as $j
+              | $lines[$i + $j] | line_matches($body[$j]; $j == $count - 1)));
 
     map(select(.severity == $severity) | select(written | not) | bullet) | join("\n")
   ' < "$findings"
@@ -178,8 +193,8 @@ missing_bullets() {
 
 # Adds every finding the reply left out to the rendered marker comment, so none is
 # lost: under the reply's own MUST or SHOULD header when it has one, otherwise under
-# a new header at the end. The explanation line appears only when something was
-# added.
+# a new header at the end. The explanation line appears only when a new header is
+# appended, directly before it.
 add_missing_findings() {
   local reply="$1" findings="$2" rendered="$3"
   local must should
@@ -219,16 +234,17 @@ add_missing_findings() {
           if ((severity in end_of) && end_of[severity] == i &&
             bullets[severity] != "") {
             print bullets[severity]
-            added = 1
           }
         }
       }
 
+      # The note introduces the new sections below it, so in-section merges alone
+      # leave it out.
       for (k = 1; k <= 2; k++) {
         severity = order[k]
-        if (!(severity in end_of) && bullets[severity] != "") added = 1
+        if (!(severity in end_of) && bullets[severity] != "") appended = 1
       }
-      if (!added) exit
+      if (!appended) exit
 
       print ""
       note = "The reply left out these findings, so they were rendered"

@@ -293,6 +293,42 @@ jq -e '.event == "COMMENT"
 printf '%s %s\n' 'ok: a partial findings section keeps its MUST bullet' \
   'and gains the missing SHOULD section'
 
+# A dedup collision: two MUST findings share the body "Fix this." at different lines.
+# The reply wrote only the a.txt:2 bullet, so matching on the body alone would drop
+# a.txt:5; the comment must keep the written bullet once and add the missing one once.
+dup_findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+  {"path":"a.txt","line":5,"side":"RIGHT","severity":"MUST","body":"Fix this."}]'
+write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  'Review summary.' '' '**MUST**' '- a.txt:2: Fix this.' '' \
+  '<!-- opencode-findings-json' "$dup_findings" '-->')"
+expect_posted
+jq -e '.body | split("\n")
+  | (map(select(. == "**MUST**")) | length == 1)
+    and (map(select(endswith("Fix this."))) == ["- a.txt:2: Fix this.", "- a.txt:5: Fix this."])
+    and (index("**MUST**") < index("- a.txt:2: Fix this."))
+    and (index("**MUST**") < index("- a.txt:5: Fix this."))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf '%s %s\n' 'ok: two findings with the same body keep the written a.txt:2 bullet once' \
+  'and add the missing a.txt:5 bullet once'
+
+# A fully populated reply: every JSON finding already has its bullet under its own
+# header, so the comment is the reply's human part exactly, with no explanation line
+# and no repeated bullet.
+full_human=$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  'Review summary.' '' '**MUST**' '- a.txt:2: Fix this.' '' \
+  '**SHOULD**' '- a.txt:9: Off the diff.')
+write_events "$(printf '%s\n' "$full_human" '' \
+  '<!-- opencode-findings-json' "$findings" '-->')"
+expect_posted
+jq -e --arg body "$full_human" '.body == $body' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a fully populated reply leaves the marker comment unchanged\n'
+
 write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
 FAIL_DELETE=1 expect_posted
 printf 'DELETE repos/owner/repo/issues/comments/122\n' |
