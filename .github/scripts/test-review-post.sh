@@ -243,6 +243,34 @@ sed -n 's/^Review events: //p' "$tmp/main.out" "$tmp/main.err" |
   jq -se 'last | .attempts == 2' > /dev/null
 printf 'ok: invalid, then valid on repair, with both payloads posted\n'
 
+# The terse repair seen on sourcefed#104: the first turn has no text event at all, and the repair
+# holds only the marker, the verdict and the findings block, so the comment's findings come from JSON.
+{
+  jq -cn '{type: "step_start", timestamp: 1, sessionID: "ses_test", part: {type: "step-start"}}'
+  jq -cn '{type: "step_finish", timestamp: 2, sessionID: "ses_test",
+    part: {type: "step-finish", reason: "stop"}}'
+} > "$tmp/invalid-events.jsonl"
+write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  '<!-- opencode-findings-json' "$findings" '-->')"
+mv -- "$tmp/events.jsonl" "$tmp/valid-events.jsonl"
+rm -f -- "$tmp/opencode-calls.jsonl"
+"$tmp/opencode" run --model "$repair_model" --variant low --format json 'Initial review.' > "$tmp/events.jsonl"
+
+expect_posted "$repair_model"
+jq -se 'length == 2' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -e '.body | split("\n")
+  | .[0] == "<!-- opencode-review -->" and .[1] == "**Verdict: FIX FIRST**"
+    and any(. == "**MUST**") and any(. == "**SHOULD**")
+    and any(endswith("Fix this.")) and any(endswith("Off the diff."))
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n") | any(. == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+sed -n 's/^Review events: //p' "$tmp/main.out" "$tmp/main.err" |
+  jq -se 'last | .attempts == 2' > /dev/null
+printf 'ok: a terse repair with only the marker, verdict and findings renders the findings\n'
+
 write_events "$(reply '**Verdict: FIX FIRST**' "$findings")"
 FAIL_DELETE=1 expect_posted
 printf 'DELETE repos/owner/repo/issues/comments/122\n' |

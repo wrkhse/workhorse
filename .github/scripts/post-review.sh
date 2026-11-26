@@ -77,7 +77,7 @@ events_diagnostics() {
   tail -n 5 -- "$events" | cut -c 1-400
 }
 
-# The initial reply puts the marker comment first; the repair prompt asks for the JSON block first.
+# Keeps the marker comment, which may come before or after the findings JSON block.
 reply_comment_text() {
   awk '
     !comment && !in_findings && /^[[:space:]]*$/ { next }
@@ -157,6 +157,30 @@ marker_comment() {
       print ENVIRON["VERDICT"]
       for (i = start; i <= n; i++) print lines[i]
     }
+  ' < "$1"
+}
+
+# Succeeds when the human-readable reply has its own findings section.
+has_findings_section() {
+  grep -Eq '^\*\*(MUST|SHOULD)\*\*' "$1"
+}
+
+# Renders the findings array as MUST and SHOULD bullets so no finding is lost when the reply has
+# no findings section of its own. Prints nothing for an empty array.
+findings_section() {
+  jq -r '
+    def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
+      + (if has("commit") then " (commit \(.commit))" else "" end);
+    def section($severity):
+      map(select(.severity == $severity) | bullet)
+      | if . == [] then empty else "\n**\($severity)**\n\(join("\n"))" end;
+
+    if . == [] then empty
+    else
+      "\nThe reply had no findings section, so these bullets were rendered from its structured findings.",
+      section("MUST"),
+      section("SHOULD")
+    end
   ' < "$1"
 }
 
@@ -406,7 +430,7 @@ repair_reply() {
     # Keep the write credential in the posting process, not the resumed reviewer.
     unset GH_TOKEN
     "$OPENCODE" run --model "$MODEL" --variant low --format json --session "$sessionID" \
-      'Reply now with only the required output: the findings JSON block, then the marker comment with the verdict line. No other text.' > "$repair_events"
+      'Reply now with only the required output: the marker comment with the verdict line, a short summary, MUST/SHOULD findings bullets, and the findings JSON block. Do not describe what you read or did.' > "$repair_events"
   ) || status=$?
   events_summary "$repair_events" 2
 
@@ -433,7 +457,11 @@ prepare() {
   esac
 
   IFS= read -r verdict < "$work/verdict"
-  marker_comment "$work/comment" "$verdict" | jq -Rs '{body: rtrimstr("\n")}' > "$work/comment.json"
+  marker_comment "$work/comment" "$verdict" > "$work/comment.md"
+  if ! has_findings_section "$work/comment"; then
+    findings_section "$work/findings.json" >> "$work/comment.md"
+  fi
+  jq -Rs '{body: rtrimstr("\n")}' < "$work/comment.md" > "$work/comment.json"
   right_lines "$diff" > "$work/right-lines"
   review_payload "$verdict" "$work/findings.json" "$work/right-lines" > "$work/review.json"
 }
