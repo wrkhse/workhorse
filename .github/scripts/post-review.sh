@@ -95,8 +95,8 @@ verdict_line() {
 }
 
 # Prints the prose after the verdict line up to the first bullet or the findings
-# block, without headings, HTML comments, or leading, trailing and repeated blank
-# lines.
+# block, without headings, HTML comments, a trailing run link, or leading,
+# trailing and repeated blank lines.
 summary_text() {
   VERDICT="$1" awk '
     function trim(s) {
@@ -116,6 +116,10 @@ summary_text() {
 
     END {
       while (n > 0 && blank(lines[n])) n--
+      if (n > 0 && trim(lines[n]) ~ /^\[(Review run|github run)\]\(.+\)$/) {
+        n--
+        while (n > 0 && blank(lines[n])) n--
+      }
       for (i = 1; i <= n; i++) print lines[i]
     }
   '
@@ -185,8 +189,11 @@ marker_comment() {
 
   jq -n --arg marker "$review_marker" --arg verdict "$verdict" \
     --rawfile summary "$summary" --slurpfile findings "$findings" '
-    def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
-      + (if (.commit // "") == "" then "" else " (commit \(.commit))" end);
+    def bullet:
+      " (commit \(.commit))" as $suffix
+      | "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
+        + (if (.commit // "") == "" or (.body | endswith($suffix)) then ""
+          else $suffix end);
     def section($severity):
       [$findings[0][] | select(.severity == $severity) | bullet]
       | if . == [] then empty else "**\($severity)**\n" + join("\n") end;
@@ -465,16 +472,21 @@ validate_reply() {
 # The repair turn spells out the whole reply shape, ending with the closed findings
 # block, because a turn told only to include the block has left it out or unclosed.
 repair_prompt=$(printf '%s\n' \
-  'Reply now with only the review, in this exact shape and nothing else. Do not describe what you read or did.' \
+  "Reply now with only the review, in this exact shape and nothing else. \
+Do not describe what you read or did." \
   "Line 1, exactly: $review_marker" \
-  'Line 2, exactly: **Verdict: X**, where X is MERGE AS IS when there is no MUST and FIX FIRST otherwise.' \
+  "Line 2, exactly: **Verdict: X**, where X is MERGE AS IS when there is no \
+MUST and FIX FIRST otherwise." \
   'Then a short summary.' \
-  'Then one-line bullets with file:line under **MUST** or **SHOULD**. Omit an empty section.' \
-  'End the reply with these three lines, without a code fence and with nothing after them:' \
+  "Then one-line bullets with file:line under **MUST** or **SHOULD**. \
+Omit an empty section." \
+  "End the reply with these three lines, without a code fence and with \
+nothing after them:" \
   '<!-- opencode-findings-json' \
   '[{"path":"...","line":12,"side":"RIGHT","severity":"MUST","body":"..."}]' \
   '-->' \
-  'The middle line is the JSON array of findings on the diff, or [] if there are none.' \
+  "The middle line is the JSON array of findings on the diff, or [] if there \
+are none." \
   'The --> line on its own closes the block and is required.')
 
 repair_reply() {

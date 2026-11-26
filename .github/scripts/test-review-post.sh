@@ -25,7 +25,7 @@ diff --git a/a.txt b/a.txt
 DIFF
 
 # gh defaults to POST when a body or field is given, as the real one does. Each
-# POST lands in $dir/writes with its body kept beside the stub; cleanup calls
+# POST lands in $dir/writes with its body kept beside the stub; cleanup writes
 # land in $dir/cleanup-attempts. FAIL_CLEANUP=1 lists one older marker comment
 # and fails its DELETE and every GraphQL call.
 cat > "$tmp/gh" <<'STUB'
@@ -77,7 +77,10 @@ case "$method $endpoint" in
     exit 1
     ;;
   *' graphql')
-    printf 'graphql\n' >> "$dir/cleanup-attempts"
+    case "$query" in
+      *mutation*) printf 'graphql mutation\n' >> "$dir/cleanup-attempts" ;;
+    esac
+
     if [ "${FAIL_CLEANUP:-0}" = 1 ]; then
       echo 'stub gh: simulated GraphQL failure' >&2
       exit 1
@@ -317,7 +320,32 @@ events "$(reply "$fix_first" "$findings" "${prose[@]}")" \
 expect_rejected ''
 printf 'ok: an error event fails without posting\n'
 
+with_commit=$(jq -c '
+  .[0] += {body: "Fix this. (commit abc1234)", commit: "abc1234"}
+' <<< "$findings")
+events "$(reply "$fix_first" "$with_commit" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body
+  | (split("\n")
+    | map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 1)
+    and (contains(" (commit abc1234) (commit abc1234)") | not)
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment renders the commit suffix exactly once\n'
+
+footer='[Review run](https://github.com/owner/repo/actions/runs/123)'
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
+  > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg footer "$footer" '.body
+  | (split("\n") | any(.[]; . == "Review summary."))
+    and (contains($footer) | not)
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment keeps the summary without the review run footer\n'
+
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 FAIL_CLEANUP=1 expect_posted
-grep -qx 'DELETE repos/owner/repo/issues/comments/122' "$tmp/cleanup-attempts"
+# The failed listing must not lead to any GraphQL mutation.
+printf '%s\n' 'DELETE repos/owner/repo/issues/comments/122' \
+  > "$tmp/expected-cleanup-attempts"
+diff -u -- "$tmp/expected-cleanup-attempts" "$tmp/cleanup-attempts"
 printf 'ok: failed cleanup keeps both posts and exits 0\n'
