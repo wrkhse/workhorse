@@ -80,13 +80,13 @@ describe("the roadmap page", () => {
         },
       },
       {
-        name: "o11y",
-        link: "https://github.com/wrkhse/o11y",
+        name: "barn",
+        link: "https://github.com/wrkhse/barn",
         plan: {
-          repo: "wrkhse/o11y",
+          repo: "wrkhse/barn",
           number: 1,
-          title: "o11y, the shared telemetry",
-          url: "https://github.com/wrkhse/o11y/issues/1",
+          title: "Plan: barn, the sandbox and runtime-stall engine",
+          url: "https://github.com/wrkhse/barn/issues/1",
         },
       },
     ];
@@ -105,7 +105,7 @@ describe("the roadmap page", () => {
         "| Project | Latest release | Plan | Status |",
         "| --- | --- | --- | --- |",
         "| [Chauffeur](/chauffeur/) | [v1.0.0-rc.5](https://github.com/wrkhse/chauffeur/releases/tag/v1.0.0-rc.5), prerelease, 2026-11-18 | [chauffeur#4](https://github.com/wrkhse/chauffeur/issues/4): Chauffeur v2 \\| slices | Slice 3 in progress |",
-        "| [o11y](https://github.com/wrkhse/o11y) | None yet | [o11y#1](https://github.com/wrkhse/o11y/issues/1): o11y, the shared telemetry | Not stated |",
+        "| [barn](https://github.com/wrkhse/barn) | None yet | [barn#1](https://github.com/wrkhse/barn/issues/1): barn, the sandbox and runtime-stall engine | Not stated |",
         "",
       ].join("\n"),
     );
