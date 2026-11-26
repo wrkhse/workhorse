@@ -285,6 +285,22 @@ jq -Rse --arg marker "$marker" '
 printf '%s\n' \
   'ok: repair prompt holds the marker, verdict shape and closed findings block'
 
+# sourcefed#105: a findings block that parses but fails validation gets one
+# repair turn, and the valid repair reply posts.
+invalid=$(jq -c '.[0].line = 0' <<< "$findings")
+events "$(reply "$fix_first" "$invalid" 'Review summary.')" > "$tmp/events.jsonl"
+events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
+expect_posted "$repair_model"
+rm -f -- "$tmp/repair-events.jsonl"
+jq -se 'length == 1' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  | last == 2
+' "$tmp/main.out" > /dev/null
+expect_sections
+printf 'ok: invalid findings JSON is repaired once and the repair posts\n'
+
 events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
 jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
@@ -346,10 +362,13 @@ events "$(reply "$fix_first" "$unanchored" 'Review summary.')" > "$tmp/events.js
 expect_posted
 jq -e '.body | split("\n") | map(select(startswith("- ")))
   | (map(select(endswith("General note."))) | length) == 1
-    and (map(select(endswith("Off the diff."))) | length) == 1
+    and (map(select(. == "- a.txt: Off the diff.")) | length) == 1
 ' "$tmp/comment-payload.json" > /dev/null
-jq -e '.comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]' \
-  "$tmp/review-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n")
+    | map(select(. == "- a.txt (SHOULD): Off the diff.")) | length == 1)
+' "$tmp/review-payload.json" > /dev/null
 printf 'ok: null path or line findings are marker bullets, not inline comments\n'
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" \

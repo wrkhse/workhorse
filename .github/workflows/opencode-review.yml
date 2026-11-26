@@ -180,10 +180,10 @@ jobs:
             to the repo root and line is the new-file line number shown on the
             RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
             SHOULD. The commit is optional; body is at most 1500 characters.
-            Include every finding in the array, including those outside the diff
-            and from NOTES.txt, using null for line when no RIGHT-side diff line
-            applies and null for path when no file applies; use [] only when
-            there are no findings.
+            Include every finding in the array, up to at most 30 findings,
+            including those outside the diff and from NOTES.txt, using null for
+            line when no RIGHT-side diff line applies and null for path when no
+            file applies; use [] only when there are no findings.
             <!-- opencode-findings-json
             [{"path":"...","line":12,"side":"RIGHT","severity":"MUST","commit":"abc1234","body":"..."}]
             -->

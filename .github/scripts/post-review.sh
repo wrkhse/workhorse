@@ -176,7 +176,8 @@ marker_comment() {
     --rawfile summary "$summary" --slurpfile findings "$findings" '
     def bullet:
       " (commit \(.commit))" as $suffix
-      | (if .path == null or .line == null then .severity
+      | (if .path == null then .severity
+        elif .line == null then .path
         else "\(.path):\(.line)" end) as $label
       | "- \($label): \(.body | gsub("\n"; "\n  "))"
         + (if (.commit // "") == "" or (.body | endswith($suffix)) then ""
@@ -260,7 +261,8 @@ review_payload() {
         and $valid[.path + "\t" + (.line | tostring)] == true)})) as $placed
     | ($placed | map(select(.inline))) as $inline
     | ($placed | map(select(.inline | not)
-        | if .path == null or .line == null then "- \(.severity): \(.body)"
+        | if .path == null then "- \(.severity): \(.body)"
+          elif .line == null then "- \(.path) (\(.severity)): \(.body)"
           else "- \(.path):\(.line) (\(.severity)): \(.body)" end)) as $bullets
     | {
         event: "COMMENT",
@@ -478,8 +480,10 @@ nothing after them:" \
   '<!-- opencode-findings-json' \
   '[{"path":"...","line":12,"side":"RIGHT","severity":"MUST","body":"..."}]' \
   '-->' \
-  "The middle line is the JSON array of findings on the diff, or [] if there \
-are none." \
+  "The middle line is a JSON array of EVERY finding, at most 30 of them: those \
+on the diff, those outside it and those from NOTES.txt." \
+  "Use \"line\":null where no line applies, and \"path\":null as well where no \
+file applies. Use [] if there are no findings." \
   'The --> line on its own closes the block and is required.')
 
 repair_reply() {
