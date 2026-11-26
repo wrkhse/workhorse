@@ -170,6 +170,10 @@ extract_findings() {
       "$(cat -- "$work/findings.err")" >&2
     return 1
   fi
+
+  if [ -s "$work/findings.err" ]; then
+    cat -- "$work/findings.err" >&2
+  fi
 }
 
 # Reads the findings block on stdin and prints the normalized array, or fails naming

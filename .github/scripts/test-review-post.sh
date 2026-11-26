@@ -624,6 +624,7 @@ mixed_commit=$(jq -c '
 events "$(reply "$fix_first" "$mixed_commit" 'Review summary.')" \
   > "$tmp/events.jsonl"
 expect_posted
+grep -Fq -- 'dropping non-scalar finding commit' "$tmp/main.err"
 [ ! -e "$tmp/opencode-calls.jsonl" ]
 jq -Rse '
   [split("\n")[] | select(startswith("Review events: "))
@@ -642,10 +643,10 @@ jq -e '.body | split("\n") as $lines
           "- a.txt:9: Off the diff. (commit true)"])
 ' "$tmp/comment-payload.json" > /dev/null
 jq -e '.event == "COMMENT"
-  and (any(.comments[]; . == {path: "a.txt", line: 2, side: "RIGHT",
-    body: "Fix this."}))
-  and (any(.comments[]; . == {path: "a.txt", line: 3, side: "RIGHT",
-    body: "Off the diff too."}))
+  and (.comments | sort_by(.line) == [
+    {path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."},
+    {path: "a.txt", line: 3, side: "RIGHT", body: "Off the diff too."}
+  ])
   and (.body | split("\n")
     | any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
 ' "$tmp/review-payload.json" > /dev/null
