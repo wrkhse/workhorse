@@ -93,8 +93,8 @@ verdict_line() {
 }
 
 # Prints the prose after the verdict (or from the start if there is no verdict)
-# up to the first bullet, findings block, ``` or ```json fence, or line that is
-# only a JSON array. Drops headings, HTML comments, trailing run links, and
+# up to the first bullet, findings block, backtick fence of any language, or line
+# that is only a JSON array. Drops headings, HTML comments, trailing run links, and
 # leading, trailing and repeated blank lines.
 summary_text() {
   VERDICT="$1" awk '
@@ -109,7 +109,7 @@ summary_text() {
     !after { after = trim($0) == ENVIRON["VERDICT"]; next }
     /^[[:space:]]*<!-- opencode-findings-json/ { exit }
     /^[[:space:]]*([-*+]|[0-9]+[.)])[[:space:]]/ { exit }
-    tolower($0) ~ /^[[:space:]]*```(json)?[[:space:]]*$/ { exit }
+    /^[[:space:]]*```/ { exit }
     /^[[:space:]]*\[[[:space:]]*(\]|\{.*\])[[:space:]]*$/ { exit }
     /^[[:space:]]*(#|<!--)/ { next }
     /^[[:space:]]*\*\*[^*]+\*\*:?[[:space:]]*$/ { next }
@@ -126,11 +126,13 @@ summary_text() {
 
 # Writes each findings candidate in the reply to $dir/N, numbered in search order,
 # and prints its kind on a line of its own: the first closed findings block, each
-# closed fenced block tagged ```json, then each line that is only a JSON array. An
-# untagged fence is never a candidate, so a code block in the summary cannot pose
-# as findings. The fenced and line fallbacks apply only when the reply has no
-# findings block opener at all: a malformed required block stays the sole
-# candidate, so it fails and gets the repair turn. Keeps at most 20 candidates.
+# closed fenced block tagged ```json, then each line outside every backtick fence
+# that is only a JSON array. An untagged or other-language fence is never a
+# candidate, and no array line inside any fence is one, so a code block in the
+# summary cannot pose as findings. The fenced and line fallbacks apply only when
+# the reply has no findings block opener at all: a malformed required block stays
+# the sole candidate, so it fails and gets the repair turn. Keeps at most 20
+# candidates.
 findings_candidates() {
   local reply="$1" dir="$2"
 
@@ -143,7 +145,7 @@ findings_candidates() {
       print kind
     }
 
-    FNR == 1 { pass++; open = 0; body = "" }
+    FNR == 1 { pass++; open = 0; body = ""; fenced = 0 }
     pass >= 2 && present { exit }
     pass == 1 && /^[[:space:]]*<!-- opencode-findings-json/ { present = 1 }
     pass == 1 && done { next }
@@ -167,6 +169,8 @@ findings_candidates() {
       open = 0
       next
     }
+    pass == 3 && /^[[:space:]]*```/ { fenced = !fenced; next }
+    pass == 3 && fenced { next }
     pass == 3 && /^[[:space:]]*\[[[:space:]]*(\]|\{.*\])[[:space:]]*$/ {
       keep("JSON array line", $0 "\n")
     }

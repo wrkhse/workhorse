@@ -365,6 +365,36 @@ jq -e '
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: a plain-fence example is ignored in favour of the json fence\n'
 
+# With no findings block, a plain fence holding an example array comes before
+# the real findings on a bare one-line array. The example line inside the fence
+# is never the review's findings.
+examples=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  'The findings take this shape:' '' "$fence" "$example" "$fence" '' \
+  "$findings")
+events "$examples" > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+expect_sections
+jq -e '.body | contains("Example finding.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | contains("Example finding.") | not)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a plain-fence example is ignored in favour of the bare array line\n'
+
+# A shell code block in the summary is an example, not review text: the marker
+# comment keeps the prose around it but none of the fence.
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "${fence}bash" \
+  'echo example-command' "$fence")" > "$tmp/events.jsonl"
+expect_posted
+expect_sections
+jq -e --arg fence "$fence" '.body
+  | (split("\n") | any(.[]; . == "Review summary."))
+    and (contains($fence) or contains("example-command") | not)
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: a bash fence in the summary is left out of the marker comment\n'
+
 # A reply without the review marker is not a review: it fails, names the
 # marker, and writes nothing.
 events "$(reply "$fix_first" "$findings" 'Review summary.' | tail -n +2)" \
