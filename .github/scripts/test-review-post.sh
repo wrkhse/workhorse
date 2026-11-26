@@ -246,13 +246,23 @@ printf 'ok: valid reply renders its findings from JSON and posts a COMMENT revie
 
 # The terse repair seen on sourcefed#104: the first turn has no text event at
 # all, and the repair holds only the marker, the verdict and the findings block.
+repair_model=fixture/reviewer
 events '' > "$tmp/events.jsonl"
 events "$(reply "$fix_first" "$findings")" > "$tmp/repair-events.jsonl"
-expect_posted fixture/reviewer
+expect_posted "$repair_model"
 rm -f -- "$tmp/repair-events.jsonl"
-jq -se 'length == 1
-  and (.[0] | index("--session") as $at | $at != null and .[$at + 1] == "ses_test")
+jq -se --arg model "$repair_model" '
+  length == 1 and (.[0]
+    | length == 10
+      and .[:9] == ["run", "--model", $model, "--variant", "low",
+        "--format", "json", "--session", "ses_test"]
+      and (.[9] | type == "string" and . != ""))
 ' "$tmp/opencode-calls.jsonl" > /dev/null
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  | last == 2
+' "$tmp/main.out" > /dev/null
 expect_sections
 jq -e '.event == "COMMENT"
   and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
@@ -331,6 +341,15 @@ jq -e '.body
     and (contains(" (commit abc1234) (commit abc1234)") | not)
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: marker comment renders the commit suffix exactly once\n'
+
+commit_only=$(jq -c '.[0].commit = "abc1234"' <<< "$findings")
+events "$(reply "$fix_first" "$commit_only" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body | split("\n")
+  | map(select(startswith("- a.txt:2: ")))
+    == ["- a.txt:2: Fix this. (commit abc1234)"]
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment appends the missing commit suffix exactly once\n'
 
 footer='[Review run](https://github.com/owner/repo/actions/runs/123)'
 events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
