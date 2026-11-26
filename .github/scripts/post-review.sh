@@ -558,6 +558,21 @@ validate_reply() {
   fi
 }
 
+# The repair turn spells out the whole reply shape, ending with the closed findings block,
+# because a turn told only to include the block has left it out or unclosed.
+repair_prompt=$(printf '%s\n' \
+  'Reply now with only the review, in this exact shape and nothing else. Do not describe what you read or did.' \
+  "Line 1, exactly: $review_marker" \
+  'Line 2, exactly: **Verdict: X**, where X is MERGE AS IS when there is no MUST and FIX FIRST otherwise.' \
+  'Then a short summary.' \
+  'Then one-line bullets with file:line under **MUST** or **SHOULD**. Omit an empty section.' \
+  'End the reply with these three lines, without a code fence and with nothing after them:' \
+  '<!-- opencode-findings-json' \
+  '[{"path":"...","line":12,"side":"RIGHT","severity":"MUST","body":"..."}]' \
+  '-->' \
+  'The middle line is the JSON array of findings on the diff, or [] if there are none.' \
+  'The --> line on its own closes the block and is required.')
+
 repair_reply() {
   local events="$1" repair_events="$2" sessionID status=0
   local OPENCODE="${OPENCODE:-opencode}"
@@ -576,7 +591,7 @@ repair_reply() {
     # Keep the write credential in the posting process, not the resumed reviewer.
     unset GH_TOKEN
     "$OPENCODE" run --model "$MODEL" --variant low --format json --session "$sessionID" \
-      'Reply now with only the required output: the marker comment with the verdict line, a short summary, MUST/SHOULD findings bullets, and the findings JSON block. Do not describe what you read or did.' > "$repair_events"
+      "$repair_prompt" > "$repair_events"
   ) || status=$?
   events_summary "$repair_events" 2
 
