@@ -361,9 +361,8 @@ printf '%s %s\n' 'ok: a written bullet with a commit suffix at the same line as 
   'keeps both bullets once each'
 
 # The reverse commit-suffix case: the only MUST finding carries a commit, and the reply wrote
-# a plain bullet without the suffix. The plain bullet does not match the finding's rendered
-# bullet, so the comment must keep the written plain bullet once, never repeat it, and add the
-# suffixed bullet once.
+# a plain bullet without the suffix. That plain bullet already covers the finding, so the
+# comment must keep it once and must not add a second, suffixed bullet for the same finding.
 reverse_commit_findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST",
   "body":"Fix this.","commit":"abc1234"}]'
 write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
@@ -372,13 +371,13 @@ write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**
 expect_posted
 jq -e '.body | split("\n")
   | (map(select(. == "**MUST**")) | length == 1)
-    and (map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 1)
     and (map(select(. == "- a.txt:2: Fix this.")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 0)
     and (map(select(. == "- a.txt:2: Fix this. (commit abc1234) (commit abc1234)")) | length == 0)
-    and (index("**MUST**") < index("- a.txt:2: Fix this. (commit abc1234)"))
+    and (index("**MUST**") < index("- a.txt:2: Fix this."))
 ' "$tmp/comment-payload.json" > /dev/null
 printf '%s %s\n' 'ok: a written plain bullet for a finding with a commit' \
-  'gains the suffixed bullet once and keeps the plain bullet once'
+  'stays once and gains no suffixed bullet'
 
 # A body that already ends with its commit suffix: the reply wrote no bullet for the finding,
 # so the fallback renders it, and it must not append " (commit abc1234)" a second time.

@@ -163,7 +163,8 @@ marker_comment() {
 # Renders, as bullets, the findings of one severity that the human-readable reply
 # does not already hold as its own bullet: a line '- path:line: body' or the older
 # '- path:line body', with any further body lines on the lines after it, as
-# written or indented the way a bullet continues it. Comparison is literal, so a
+# written or indented the way a bullet continues it, its last line with or without
+# the commit suffix the rendered bullet appends. Comparison is literal, so a
 # body quoted elsewhere or the same body at another path or line does not count.
 # Prints nothing when the reply holds them all.
 missing_bullets() {
@@ -183,10 +184,10 @@ missing_bullets() {
     # The rendered bullet, with the commit suffix unless the body already ends with it.
     def bullet: bullet_text + (appended_suffix // "");
     # A body line matches exactly. When the bullet appends a commit suffix, the last
-    # line matches only when followed by exactly that suffix, so a reply bullet
-    # without it does not count as the finding written.
+    # line also matches when followed by exactly that suffix, so a plain reply bullet
+    # and a suffixed one both count as the finding written.
     def line_matches($want; $last; $suffix): trimmed as $have
-      | if $last and $suffix != null then $have == $want + $suffix else $have == $want end;
+      | $have == $want or ($last and $suffix != null and $have == $want + $suffix);
     def written:
       ("- \(.path):\(.line)") as $head
       | appended_suffix as $suffix
