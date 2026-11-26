@@ -173,26 +173,26 @@ missing_bullets() {
     def bullet: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
       + (if has("commit") then " (commit \(.commit))" else "" end);
     def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
-    # The suffix a rendered bullet carries after its last body line: " (commit <hex>)".
+    # The suffix a rendered bullet carries after its last body line, " (commit <commit>)",
+    # or null when the finding names no commit and its body must match with nothing after it.
     def commit_suffix:
-      startswith(" (commit ") and endswith(")")
-      and (ltrimstr(" (commit ") | rtrimstr(")")
-        | length > 0
-          and (explode | all(. >= 48 and . <= 57 or . >= 97 and . <= 102 or . >= 65 and . <= 70)));
-    # The last body line matches exactly, or followed only by the commit suffix.
-    def line_matches($want; $last): trimmed as $have
+      if (.commit | type) == "string" then " (commit \(.commit))" else null end;
+    # A body line matches exactly; the last may also be followed by exactly the commit
+    # suffix of the same finding.
+    def line_matches($want; $last; $suffix): trimmed as $have
       | $have == $want
-        or ($last and ($have | startswith($want)) and ($have | ltrimstr($want) | commit_suffix));
+        or ($last and $suffix != null and $have == $want + $suffix);
     def written:
       ("- \(.path):\(.line)") as $head
+      | commit_suffix as $suffix
       | (.body | split("\n") | map(trimmed)) as $body
       | ($body | length) as $count
       | ($reply | split("\n")) as $lines
       | any(range(0; ($lines | length) - $count + 1); . as $i
-          | ($lines[$i] | line_matches($head + ": " + $body[0]; $count == 1)
-              or line_matches($head + " " + $body[0]; $count == 1))
+          | ($lines[$i] | line_matches($head + ": " + $body[0]; $count == 1; $suffix)
+              or line_matches($head + " " + $body[0]; $count == 1; $suffix))
             and all(range(1; $count); . as $j
-              | $lines[$i + $j] | line_matches($body[$j]; $j == $count - 1)));
+              | $lines[$i + $j] | line_matches($body[$j]; $j == $count - 1; $suffix)));
 
     map(select(.severity == $severity) | select(written | not) | bullet) | join("\n")
   ' < "$findings"

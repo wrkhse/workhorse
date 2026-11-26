@@ -339,6 +339,26 @@ jq -e '.event == "COMMENT"
 printf '%s %s\n' 'ok: a written bullet whose body extends another finding at the same line' \
   'keeps both bullets once each'
 
+# A commit-suffix collision: two MUST findings share a.txt:2, and the second carries a commit
+# whose rendered suffix makes its bullet extend the first one's. The reply wrote only the
+# suffixed bullet, so the comment must keep it once and add the plain bullet once.
+commit_findings='[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+  {"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this. (commit abc1234)",
+   "commit":"abc1234"}]'
+write_events "$(printf '%s\n' '<!-- opencode-review -->' '**Verdict: FIX FIRST**' \
+  'Review summary.' '' '**MUST**' '- a.txt:2: Fix this. (commit abc1234)' '' \
+  '<!-- opencode-findings-json' "$commit_findings" '-->')"
+expect_posted
+jq -e '.body | split("\n")
+  | (map(select(. == "**MUST**")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this.")) | length == 1)
+    and (map(select(. == "- a.txt:2: Fix this. (commit abc1234)")) | length == 1)
+    and (index("**MUST**") < index("- a.txt:2: Fix this."))
+    and (index("**MUST**") < index("- a.txt:2: Fix this. (commit abc1234)"))
+' "$tmp/comment-payload.json" > /dev/null
+printf '%s %s\n' 'ok: a written bullet with a commit suffix at the same line as a plain finding' \
+  'keeps both bullets once each'
+
 # A fully populated reply: every JSON finding already has its bullet under its own
 # header, so the comment is the reply's human part exactly, with no explanation line
 # and no repeated bullet.
