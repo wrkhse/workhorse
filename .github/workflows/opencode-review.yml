@@ -174,7 +174,7 @@ jobs:
 
             List findings as one-line bullets with file:line under **MUST**
             (bugs and every gaming finding) or **SHOULD**. Omit an empty section.
-            The human-readable part is at most 25 lines. No praise.
+            No praise.
 
             At the very end of the reply, append a JSON array in an HTML comment
             on three lines exactly as shown, or put the same array in a fenced

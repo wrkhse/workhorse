@@ -126,10 +126,11 @@ summary_text() {
 
 # Writes each findings candidate in the reply to $dir/N, numbered in search order,
 # and prints its kind on a line of its own: the first closed findings block, each
-# closed ``` or ```json fenced block, then each line that is only a JSON array.
-# The fenced and line fallbacks apply only when the reply has no findings block
-# opener at all: a malformed required block stays the sole candidate, so it fails
-# and gets the repair turn. Keeps at most 20 candidates.
+# closed fenced block tagged ```json, then each line that is only a JSON array. An
+# untagged fence is never a candidate, so a code block in the summary cannot pose
+# as findings. The fenced and line fallbacks apply only when the reply has no
+# findings block opener at all: a malformed required block stays the sole
+# candidate, so it fails and gets the repair turn. Keeps at most 20 candidates.
 findings_candidates() {
   local reply="$1" dir="$2"
 
@@ -156,7 +157,7 @@ findings_candidates() {
       done = 1
       next
     }
-    pass == 2 && !open && tolower($0) ~ /^[[:space:]]*```(json)?[[:space:]]*$/ {
+    pass == 2 && !open && tolower($0) ~ /^[[:space:]]*```json[[:space:]]*$/ {
       open = 1
       body = ""
       next
@@ -499,7 +500,9 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# Returns 1 for missing or invalid findings JSON, 2 for other failures.
+# Returns 1 for missing or invalid findings JSON, 2 for other failures, including a
+# reply without the review marker. Findings are checked first, so only a reply
+# whose findings JSON is valid can fail on the marker alone, which is not repaired.
 validate_reply() {
   local events="$1" work="$2" verdict model_verdict
 
@@ -512,6 +515,11 @@ validate_reply() {
   fi
 
   extract_findings "$work" || return $?
+
+  if ! grep -qF -- "$review_marker" "$work/reply"; then
+    printf 'ERROR: review reply has no %s marker\n' "$review_marker" >&2
+    return 2
+  fi
 
   verdict=$(jq -r '
     if any(.[]; .severity == "MUST") then "**Verdict: FIX FIRST**"

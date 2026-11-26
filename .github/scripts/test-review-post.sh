@@ -336,6 +336,42 @@ jq -e --arg verdict "$merge_as_is" '
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: a bare [] findings line posts MERGE AS IS without a repair turn\n'
 
+# A non-empty findings array alone on one line is accepted the same way.
+events "$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' "$findings")" \
+  > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+expect_sections
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a non-empty one-line findings array posts without a repair turn\n'
+
+# Regression: a plain fence holding an example array comes before the real
+# findings in a json fence. The example is valid JSON, yet only the json fence
+# is the review's findings.
+example=$(jq -c '[.[0] | .body = "Example finding."]' <<< "$findings")
+examples=$(printf '%s\n' "$marker" "$fix_first" 'Review summary.' '' \
+  'The findings take this shape:' '' "$fence" "$example" "$fence" '' \
+  "${fence}json" "$findings" "$fence")
+events "$examples" > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+expect_sections
+jq -e '.body | contains("Example finding.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: a plain-fence example is ignored in favour of the json fence\n'
+
+# A reply without the review marker is not a review: it fails, names the
+# marker, and writes nothing.
+events "$(reply "$fix_first" "$findings" 'Review summary.' | tail -n +2)" \
+  > "$tmp/events.jsonl"
+expect_rejected "$marker"
+printf 'ok: a reply without the review marker fails without posting\n'
+
 # A findings block that is present but malformed stays the only candidate: the
 # valid fenced block after it is ignored, and one repair turn supplies the
 # findings that post.
