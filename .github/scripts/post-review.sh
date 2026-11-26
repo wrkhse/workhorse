@@ -184,7 +184,7 @@ validate_findings() {
       elif (.commit | type) == "number" or (.commit | type) == "boolean" then
         .commit |= tostring
       else
-        ("dropping non-scalar finding commit" | debug) | del(.commit)
+        ("dropping non-scalar finding commit" | debug) as $unused | del(.commit)
       end;
     def problem:
       if type != "object" then "is not an object"
