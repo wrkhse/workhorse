@@ -612,6 +612,29 @@ jq -e '.body | split("\n")
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: marker comment appends the missing commit suffix exactly once\n'
 
+# barn#25: model-written commits need not be strings. A number is coerced to a
+# string suffix; an object is dropped; neither form blocks the review.
+mixed_commit=$(jq -c '
+  .[0].commit = 1234567 | .[1].commit = {sha: "abc"}
+' <<< "$findings")
+events "$(reply "$fix_first" "$mixed_commit" 'Review summary.')" \
+  > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body | split("\n") as $lines
+  | ([$lines[] | select(startswith("- a.txt:2: "))]
+      == ["- a.txt:2: Fix this. (commit 1234567)"])
+    and ([$lines[] | select(startswith("- a.txt:9: "))]
+      == ["- a.txt:9: Off the diff."])
+    and ([$lines[] | select(contains("(commit"))]
+      == ["- a.txt:2: Fix this. (commit 1234567)"])
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.event == "COMMENT"
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+  and (.body | split("\n")
+    | any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: numeric commit is coerced and object commit is dropped\n'
+
 footer='[Build evidence run](https://example.com/builds/123)'
 events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
   > "$tmp/events.jsonl"

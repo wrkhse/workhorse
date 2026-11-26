@@ -177,6 +177,15 @@ extract_findings() {
 validate_findings() {
   jq -cs '
     def side: if has("side") then .side else "RIGHT" end;
+    # Commit is attribution only. Scalars become strings; other types are dropped
+    # with a warning so a bad commit can never block the review.
+    def normalize_commit:
+      if (has("commit") | not) or (.commit | type) == "string" then .
+      elif (.commit | type) == "number" or (.commit | type) == "boolean" then
+        .commit |= tostring
+      else
+        ("dropping non-scalar finding commit" | debug) | del(.commit)
+      end;
     def problem:
       if type != "object" then "is not an object"
       elif (has("path") | not) or (.path | type != "string" and . != null) then
@@ -189,8 +198,6 @@ validate_findings() {
         "severity must be MUST or SHOULD"
       elif (.body | type != "string" or length < 1 or length > 1500) then
         "body must be a string of 1 to 1500 characters"
-      elif has("commit") and (.commit | type) != "string" then
-        "commit must be a string"
       else empty
       end;
 
@@ -202,7 +209,8 @@ validate_findings() {
     | (to_entries | map(.key as $i | .value | problem | "finding \($i): \(.)")
       | first) as $bad
     | if $bad then error($bad)
-      else map(.side = side | if .line == null then . else .line |= floor end)
+      else map(.side = side | if .line == null then . else .line |= floor end
+        | normalize_commit)
       end
   '
 }
