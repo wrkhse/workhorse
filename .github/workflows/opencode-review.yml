@@ -175,6 +175,10 @@ jobs:
             List findings as one-line bullets with file:line under **MUST**
             (bugs and every gaming finding) or **SHOULD**. Omit an empty section.
             No praise.
+            MUST only when wrong code could merge, or for security or data loss.
+            Edge cases that need an unlikely input, and gaps in tests, are SHOULD.
+            Weigh how likely a failure is and how much it would hurt before
+            choosing a severity.
 
             At the very end of the reply, append a JSON array in an HTML comment
             on three lines exactly as shown, without a code fence. The findings

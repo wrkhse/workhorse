@@ -127,19 +127,32 @@ summary_text() {
   '
 }
 
-# Prints the lines of the reply's first closed findings block: those between a line
-# that is exactly the opener and the next line that is only -->. Fails when no
+# Prints the lines of the reply's last closed findings block: those between a line
+# that is exactly the opener and the next line that is only -->. The reply ends
+# with its block, so an example block quoted earlier, in a fence or the prose, is
+# skipped. An opener inside an open block starts the block again. Fails when no
 # block is closed.
 findings_block() {
   awk '
-    !open && /^<!-- opencode-findings-json[[:space:]]*$/ { open = 1; next }
-    open && /^-->[[:space:]]*$/ { found = 1; exit }
-    open { print }
-    END { exit !found }
+    /^<!-- opencode-findings-json[[:space:]]*$/ { open = 1; n = 0; next }
+    open && /^-->[[:space:]]*$/ {
+      open = 0
+      found = 1
+      last = ""
+      for (i = 1; i <= n; i++) last = last lines[i] "\n"
+      next
+    }
+    open { lines[++n] = $0 }
+
+    END {
+      printf "%s", last
+      exit !found
+    }
   '
 }
 
-# Writes the findings of the reply's closed findings block to $work/findings.json.
+# Writes the findings of the reply's last closed findings block to
+# $work/findings.json.
 # The block is the only source of findings. Returns 1, naming the problem, when it
 # is missing or its JSON is invalid.
 extract_findings() {

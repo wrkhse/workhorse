@@ -405,6 +405,29 @@ jq -e '
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: a malformed findings block ignores the fence and repairs once\n'
 
+# A fenced example of a closed findings block, followed by the real block at the
+# end of the reply: the last block is the findings, so the example's placeholder
+# never posts and no repair turn runs.
+example=$(jq -c '.[0].body = "From the example."' <<< "$findings")
+events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$fence" \
+  '<!-- opencode-findings-json' "$example" '-->' "$fence")" \
+  > "$tmp/events.jsonl"
+expect_posted
+[ ! -e "$tmp/opencode-calls.jsonl" ]
+jq -Rse '
+  [split("\n")[] | select(startswith("Review events: "))
+    | ltrimstr("Review events: ") | fromjson | .attempts]
+  == [1]
+' "$tmp/main.out" > /dev/null
+expect_sections
+jq -e '.body | contains("From the example.") | not' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e '
+  .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+    and (tostring | contains("From the example.") | not)
+' "$tmp/review-payload.json" > /dev/null
+printf 'ok: the last findings block wins over a fenced example block\n'
+
 events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
 jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
