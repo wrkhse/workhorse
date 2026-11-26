@@ -160,6 +160,41 @@ marker_comment() {
   ' < "$1"
 }
 
+# jq definitions shared by missing_bullets and attribute_commits, which must agree on
+# what counts as a finding written in the reply.
+finding_bullet_jq='
+  def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
+  # The suffix a rendered bullet carries after its last body line, " (commit <commit>)",
+  # or null when the finding names no commit and its body must match with nothing after it.
+  def commit_suffix:
+    if (.commit | type) == "string" then " (commit \(.commit))" else null end;
+  def bullet_text: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))";
+  # The commit suffix the bullet appends after its body, or null when the finding
+  # names no commit or its body already ends with the suffix.
+  def appended_suffix: commit_suffix as $suffix
+    | if $suffix == null or (bullet_text | endswith($suffix)) then null else $suffix end;
+  # The rendered bullet, with the commit suffix unless the body already ends with it.
+  def bullet: bullet_text + (appended_suffix // "");
+  # A body line matches exactly. When the bullet appends a commit suffix, the last
+  # line also matches when followed by exactly that suffix, so a plain reply bullet
+  # and a suffixed one both count as the finding written.
+  def line_matches($want; $last; $suffix): trimmed as $have
+    | $have == $want or ($last and $suffix != null and $have == $want + $suffix);
+  # The index in $lines of the last line of every place the finding is written as
+  # its own bullet.
+  def written_at($lines):
+    ("- \(.path):\(.line)") as $head
+    | appended_suffix as $suffix
+    | (.body | split("\n") | map(trimmed)) as $body
+    | ($body | length) as $count
+    | range(0; ($lines | length) - $count + 1) as $i
+    | select(($lines[$i] | line_matches($head + ": " + $body[0]; $count == 1; $suffix)
+          or line_matches($head + " " + $body[0]; $count == 1; $suffix))
+        and all(range(1; $count); . as $j
+          | $lines[$i + $j] | line_matches($body[$j]; $j == $count - 1; $suffix)))
+    | $i + $count - 1;
+'
+
 # Renders, as bullets, the findings of one severity that the human-readable reply
 # does not already hold as its own bullet: a line '- path:line: body' or the older
 # '- path:line body', with any further body lines on the lines after it, as
@@ -170,44 +205,42 @@ marker_comment() {
 missing_bullets() {
   local reply="$1" findings="$2" severity="$3"
 
-  jq -r --rawfile reply "$reply" --arg severity "$severity" '
-    def trimmed: sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "");
-    # The suffix a rendered bullet carries after its last body line, " (commit <commit>)",
-    # or null when the finding names no commit and its body must match with nothing after it.
-    def commit_suffix:
-      if (.commit | type) == "string" then " (commit \(.commit))" else null end;
-    def bullet_text: "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))";
-    # The commit suffix the bullet appends after its body, or null when the finding
-    # names no commit or its body already ends with the suffix.
-    def appended_suffix: commit_suffix as $suffix
-      | if $suffix == null or (bullet_text | endswith($suffix)) then null else $suffix end;
-    # The rendered bullet, with the commit suffix unless the body already ends with it.
-    def bullet: bullet_text + (appended_suffix // "");
-    # A body line matches exactly. When the bullet appends a commit suffix, the last
-    # line also matches when followed by exactly that suffix, so a plain reply bullet
-    # and a suffixed one both count as the finding written.
-    def line_matches($want; $last; $suffix): trimmed as $have
-      | $have == $want or ($last and $suffix != null and $have == $want + $suffix);
-    def written:
-      ("- \(.path):\(.line)") as $head
-      | appended_suffix as $suffix
-      | (.body | split("\n") | map(trimmed)) as $body
-      | ($body | length) as $count
-      | ($reply | split("\n")) as $lines
-      | any(range(0; ($lines | length) - $count + 1); . as $i
-          | ($lines[$i] | line_matches($head + ": " + $body[0]; $count == 1; $suffix)
-              or line_matches($head + " " + $body[0]; $count == 1; $suffix))
-            and all(range(1; $count); . as $j
-              | $lines[$i + $j] | line_matches($body[$j]; $j == $count - 1; $suffix)));
+  jq -r --rawfile reply "$reply" --arg severity "$severity" "$finding_bullet_jq"'
+    ($reply | split("\n")) as $lines
+    | map(select(.severity == $severity) | select(any(written_at($lines); true) | not)
+        | bullet)
+    | join("\n")
+  ' < "$findings"
+}
 
-    map(select(.severity == $severity) | select(written | not) | bullet) | join("\n")
+# Prints the rendered marker comment with commit attribution on the findings the reply
+# wrote without it: when a finding with a commit is written only as a plain bullet, the
+# last line of its first such bullet gets the " (commit <commit>)" suffix. A finding
+# already written with the suffix anywhere is left unchanged, as is every other line.
+attribute_commits() {
+  local findings="$1" rendered="$2"
+
+  jq -j --rawfile rendered "$rendered" "$finding_bullet_jq"'
+    ($rendered | split("\n")) as $lines
+    | reduce (.[] | appended_suffix as $suffix | select($suffix != null)
+        | [written_at($lines)] as $at
+        | select($at != [] and all($at[]; $lines[.] | trimmed | endswith($suffix) | not))
+        | {at: ($at[0] | tostring), $suffix}) as $add
+        ({}; if has($add.at) then . else .[$add.at] = $add.suffix end)
+    | . as $append
+    | $lines | to_entries
+    | map($append[.key | tostring] as $suffix
+        | if $suffix == null then .value
+          else (.value | sub("[[:space:]]+$"; "")) + $suffix end)
+    | join("\n")
   ' < "$findings"
 }
 
 # Adds every finding the reply left out to the rendered marker comment, so none is
 # lost: under the reply's own MUST or SHOULD header when it has one, otherwise under
 # a new header at the end. The explanation line appears only when a new header is
-# appended, directly before it.
+# appended, directly before it. A finding the reply wrote as a plain bullet is not
+# added again; its bullet gets the commit suffix instead (attribute_commits).
 add_missing_findings() {
   local reply="$1" findings="$2" rendered="$3"
   local must should
@@ -215,7 +248,8 @@ add_missing_findings() {
   must=$(missing_bullets "$reply" "$findings" MUST) || return 1
   should=$(missing_bullets "$reply" "$findings" SHOULD) || return 1
 
-  MUST_BULLETS="$must" SHOULD_BULLETS="$should" awk '
+  attribute_commits "$findings" "$rendered" |
+    MUST_BULLETS="$must" SHOULD_BULLETS="$should" awk '
     function blank(s) { return s ~ /^[[:space:]]*$/ }
     # A bold line or a Markdown heading ends the section before it.
     function header(s) { return s ~ /^\*\*[^*]+\*\*/ || s ~ /^#/ }
@@ -271,7 +305,7 @@ add_missing_findings() {
         }
       }
     }
-  ' < "$rendered"
+  '
 }
 
 # Prints "path<TAB>line" for every new-file line a RIGHT-side review comment can target: the
