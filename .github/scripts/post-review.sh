@@ -81,22 +81,20 @@ events_diagnostics() {
   tail -n 5 -- "$events" | cut -c 1-400
 }
 
-# Prints the first line that is exactly a verdict, without surrounding whitespace.
+# Prints the first verdict line, if present, without surrounding whitespace.
 verdict_line() {
   awk '
     { line = $0; sub(/^[[:space:]]+/, "", line); sub(/[[:space:]]+$/, "", line) }
-    line ~ /^\*\*Verdict: (MERGE AS IS|FIX FIRST)\*\*$/ {
+    line ~ /^\*\*Verdict:[^*]*\*\*$/ {
       print line
-      found = 1
       exit
     }
-    END { exit !found }
   '
 }
 
-# Prints the prose after the verdict line up to the first bullet or the findings
-# block, without headings, HTML comments, a trailing run link, or leading,
-# trailing and repeated blank lines.
+# Prints the prose after the verdict (or from the start if there is no verdict)
+# up to the first bullet or findings block. Drops headings, HTML comments,
+# trailing run links, and leading, trailing and repeated blank lines.
 summary_text() {
   VERDICT="$1" awk '
     function trim(s) {
@@ -106,6 +104,7 @@ summary_text() {
     }
     function blank(s) { return s ~ /^[[:space:]]*$/ }
 
+    BEGIN { after = ENVIRON["VERDICT"] == "" }
     !after { after = trim($0) == ENVIRON["VERDICT"]; next }
     /^[[:space:]]*<!-- opencode-findings-json/ { exit }
     /^[[:space:]]*([-*+]|[0-9]+[.)])[[:space:]]/ { exit }
@@ -115,11 +114,8 @@ summary_text() {
     { lines[++n] = $0 }
 
     END {
-      while (n > 0 && blank(lines[n])) n--
-      if (n > 0 && trim(lines[n]) ~ /^\[(Review run|github run)\]\(.+\)$/) {
-        n--
-        while (n > 0 && blank(lines[n])) n--
-      }
+      while (n > 0 && (blank(lines[n]) ||
+          trim(lines[n]) ~ /^\[[^]]+ run\]\(https?:\/\/.+\)$/)) n--
       for (i = 1; i <= n; i++) print lines[i]
     }
   '
@@ -143,9 +139,11 @@ validate_findings() {
     def side: if has("side") then .side else "RIGHT" end;
     def problem:
       if type != "object" then "is not an object"
-      elif (.path | type) != "string" then "path must be a string"
-      elif (.line | type != "number" or . < 1 or floor != .) then
-        "line must be an integer >= 1"
+      elif (has("path") | not) or (.path | type != "string" and . != null) then
+        "path must be a string or null"
+      elif (has("line") | not) or (.line |
+          . != null and (type != "number" or . < 1 or floor != .)) then
+        "line must be an integer >= 1 or null"
       elif (side | . != "RIGHT" and . != "LEFT") then "side must be RIGHT or LEFT"
       elif (.severity | . != "MUST" and . != "SHOULD") then
         "severity must be MUST or SHOULD"
@@ -163,23 +161,10 @@ validate_findings() {
       else . end
     | (to_entries | map(.key as $i | .value | problem | "finding \($i): \(.)")
       | first) as $bad
-    | if $bad then error($bad) else map(.side = side | .line |= floor) end
+    | if $bad then error($bad)
+      else map(.side = side | if .line == null then . else .line |= floor end)
+      end
   '
-}
-
-# Fails unless the verdict is FIX FIRST exactly when the findings hold a MUST.
-verdict_agrees() {
-  local verdict="$1" findings="$2" want
-
-  want=$(jq -r '
-    if any(.[]; .severity == "MUST") then "FIX FIRST" else "MERGE AS IS" end
-  ' < "$findings") || return 1
-
-  if [ "$verdict" != "**Verdict: $want**" ]; then
-    printf 'ERROR: verdict %s disagrees with the findings JSON, %s\n' \
-      "$verdict" "which calls for **Verdict: $want**" >&2
-    return 1
-  fi
 }
 
 # Prints the marker comment payload: the marker, the verdict, the summary, then a
@@ -191,7 +176,9 @@ marker_comment() {
     --rawfile summary "$summary" --slurpfile findings "$findings" '
     def bullet:
       " (commit \(.commit))" as $suffix
-      | "- \(.path):\(.line): \(.body | gsub("\n"; "\n  "))"
+      | (if .path == null or .line == null then .severity
+        else "\(.path):\(.line)" end) as $label
+      | "- \($label): \(.body | gsub("\n"; "\n  "))"
         + (if (.commit // "") == "" or (.body | endswith($suffix)) then ""
           else $suffix end);
     def section($severity):
@@ -258,8 +245,9 @@ right_lines() {
   ' < "$1"
 }
 
-# A finding is inline only on a RIGHT-side diff line; the rest become bullets in the
-# review body. Validation already bounds the findings to 30 and each body to 1500.
+# A finding is inline only with a path and line on the RIGHT side of the diff.
+# The rest become bullets in the review body. Validation caps findings at 30
+# and each body at 1500 characters.
 review_payload() {
   local verdict="$1" findings="$2" lines="$3"
 
@@ -267,11 +255,13 @@ review_payload() {
     --slurpfile findings "$findings" --rawfile lines "$lines" '
     ($lines | split("\n") | map(select(length > 0) | {key: ., value: true})
       | from_entries) as $valid
-    | ($findings[0] | map(. + {inline: (.side == "RIGHT"
+    | ($findings[0] | map(. + {inline: (.path != null and .line != null
+        and .side == "RIGHT"
         and $valid[.path + "\t" + (.line | tostring)] == true)})) as $placed
     | ($placed | map(select(.inline))) as $inline
     | ($placed | map(select(.inline | not)
-        | "- \(.path):\(.line) (\(.severity)): \(.body)")) as $bullets
+        | if .path == null or .line == null then "- \(.severity): \(.body)"
+          else "- \(.path):\(.line) (\(.severity)): \(.body)" end)) as $bullets
     | {
         event: "COMMENT",
         body: ([
@@ -432,21 +422,15 @@ minimize_old_reviews() {
   done <<< "$reviews"
 }
 
-# Returns 1 for repairable reply content, 2 when the event stream itself failed.
+# Returns 1 for missing or invalid findings JSON, 2 for other failures.
 validate_reply() {
-  local events="$1" work="$2" verdict
+  local events="$1" work="$2" verdict model_verdict
 
   reply_text "$events" > "$work/reply" || return 2
 
   if ! grep -q '[^[:space:]]' "$work/reply"; then
     events_diagnostics "$events" >&2 || true
     printf 'ERROR: %s has no text reply from opencode.\n' "$events" >&2
-    return 1
-  fi
-
-  if ! verdict=$(verdict_line < "$work/reply"); then
-    printf 'ERROR: review reply has no %s or %s line\n' \
-      '**Verdict: MERGE AS IS**' '**Verdict: FIX FIRST**' >&2
     return 1
   fi
 
@@ -463,10 +447,19 @@ validate_reply() {
     return 1
   fi
 
-  verdict_agrees "$verdict" "$work/findings.json" || return 1
+  verdict=$(jq -r '
+    if any(.[]; .severity == "MUST") then "**Verdict: FIX FIRST**"
+    else "**Verdict: MERGE AS IS**" end
+  ' "$work/findings.json") || return 2
 
-  printf '%s\n' "$verdict" > "$work/verdict"
-  summary_text "$verdict" < "$work/reply" > "$work/summary"
+  model_verdict=$(verdict_line < "$work/reply") || return 2
+  if [ -n "$model_verdict" ] && [ "$model_verdict" != "$verdict" ]; then
+    printf 'WARNING: verdict %s disagrees with the findings JSON; using %s\n' \
+      "$model_verdict" "$verdict" >&2
+  fi
+
+  printf '%s\n' "$verdict" > "$work/verdict" || return 2
+  summary_text "$model_verdict" < "$work/reply" > "$work/summary" || return 2
 }
 
 # The repair turn spells out the whole reply shape, ending with the closed findings
@@ -518,8 +511,8 @@ repair_reply() {
   fi
 }
 
-# Validates before posting; only an invalid reply from the first turn can trigger a
-# repair.
+# Validates before posting; only missing or invalid findings in the first reply
+# can trigger a repair.
 prepare() {
   local events="$1" diff="$2" work="$3" repair_events="$4"
   local status=0 verdict

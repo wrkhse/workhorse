@@ -176,12 +176,14 @@ jobs:
             The human-readable part is at most 25 lines. No praise.
 
             At the very end of the reply, append a JSON array in an HTML comment
-            on three lines exactly as shown, without a code fence. Use at most 30
-            findings, or [] if none can be placed on the diff. The path is relative
+            on three lines exactly as shown, without a code fence. The path is relative
             to the repo root and line is the new-file line number shown on the
             RIGHT side of the PR diff. Set side to RIGHT and severity to MUST or
             SHOULD. The commit is optional; body is at most 1500 characters.
-            Findings outside the diff still belong in the bullets, not the array.
+            Include every finding in the array, including those outside the diff
+            and from NOTES.txt, using null for line when no RIGHT-side diff line
+            applies and null for path when no file applies; use [] only when
+            there are no findings.
             <!-- opencode-findings-json
             [{"path":"...","line":12,"side":"RIGHT","severity":"MUST","commit":"abc1234","body":"..."}]
             -->

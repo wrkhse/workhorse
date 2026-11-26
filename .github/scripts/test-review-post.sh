@@ -232,6 +232,7 @@ prose=('Review summary.' '' '**MUST**' '- a.txt:3: Stale model claim.' '' \
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 expect_posted
+[ ! -s "$tmp/cleanup-attempts" ]
 jq -e --arg marker "$marker" --arg verdict "$fix_first" '
   .body | split("\n")
   | .[0] == $marker and .[1] == $verdict and any(.[]; . == "Review summary.")
@@ -243,6 +244,7 @@ jq -e '.event == "COMMENT"
   and (.body | split("\n") | any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: valid reply renders its findings from JSON and posts a COMMENT review\n'
+printf 'ok: normal posting makes no cleanup mutations\n'
 
 # The terse repair seen on sourcefed#104: the first turn has no text event at
 # all, and the repair holds only the marker, the verdict and the findings block.
@@ -284,8 +286,12 @@ printf '%s\n' \
   'ok: repair prompt holds the marker, verdict shape and closed findings block'
 
 events "$(reply '' "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
-expect_rejected Verdict
-printf 'ok: missing verdict fails without posting\n'
+expect_posted
+jq -e --arg verdict "$fix_first" '.body | split("\n") | .[1] == $verdict' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$fix_first" '.body | split("\n") | .[0] == $verdict' \
+  "$tmp/review-payload.json" > /dev/null
+printf 'ok: reply without a verdict posts the verdict derived from JSON\n'
 
 events "$(reply "$fix_first" '[{"path":"a.txt","line":' "${prose[@]}")" \
   > "$tmp/events.jsonl"
@@ -297,8 +303,14 @@ should_only=$(jq -c . <<'JSON'
 JSON
 )
 events "$(reply "$fix_first" "$should_only" 'Review summary.')" > "$tmp/events.jsonl"
-expect_rejected Verdict
-printf 'ok: FIX FIRST without a MUST finding fails without posting\n'
+expect_posted
+merge_as_is='**Verdict: MERGE AS IS**'
+jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[1] == $verdict' \
+  "$tmp/comment-payload.json" > /dev/null
+jq -e --arg verdict "$merge_as_is" '.body | split("\n") | .[0] == $verdict' \
+  "$tmp/review-payload.json" > /dev/null
+grep -qi -- 'warning' "$tmp/main.err"
+printf 'ok: mismatched verdict warns and posts the verdict derived from JSON\n'
 
 # Context and added lines stay inline; a deleted line and a line outside the
 # hunk become bullets in the review body.
@@ -322,6 +334,23 @@ jq -e '.event == "COMMENT"
       and any(.[]; . == "- a.txt:7 (SHOULD): Not in the hunk."))
 ' "$tmp/review-payload.json" > /dev/null
 printf 'ok: findings outside the diff become review body bullets, not inline\n'
+
+unanchored=$(jq -c . <<'JSON'
+[{"path":"a.txt","line":2,"side":"RIGHT","severity":"MUST","body":"Fix this."},
+ {"path":null,"line":2,"side":"RIGHT","severity":"MUST","body":"General note."},
+ {"path":"a.txt","line":null,"side":"RIGHT","severity":"SHOULD",
+  "body":"Off the diff."}]
+JSON
+)
+events "$(reply "$fix_first" "$unanchored" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e '.body | split("\n") | map(select(startswith("- ")))
+  | (map(select(endswith("General note."))) | length) == 1
+    and (map(select(endswith("Off the diff."))) | length) == 1
+' "$tmp/comment-payload.json" > /dev/null
+jq -e '.comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]' \
+  "$tmp/review-payload.json" > /dev/null
+printf 'ok: null path or line findings are marker bullets, not inline comments\n'
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" \
   "$(jq -cn '{type: "error", timestamp: 3, sessionID: "ses_test",
@@ -351,7 +380,7 @@ jq -e '.body | split("\n")
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: marker comment appends the missing commit suffix exactly once\n'
 
-footer='[Review run](https://github.com/owner/repo/actions/runs/123)'
+footer='[Build evidence run](https://example.com/builds/123)'
 events "$(reply "$fix_first" "$findings" 'Review summary.' '' "$footer")" \
   > "$tmp/events.jsonl"
 expect_posted
@@ -359,7 +388,7 @@ jq -e --arg footer "$footer" '.body
   | (split("\n") | any(.[]; . == "Review summary."))
     and (contains($footer) | not)
 ' "$tmp/comment-payload.json" > /dev/null
-printf 'ok: marker comment keeps the summary without the review run footer\n'
+printf 'ok: marker comment strips an arbitrary trailing run footer\n'
 
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 FAIL_CLEANUP=1 expect_posted
