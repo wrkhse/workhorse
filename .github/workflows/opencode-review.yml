@@ -185,13 +185,15 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           PR_JSON: ${{ runner.temp }}/pr.json
+          CHANGED_FILES: ${{ runner.temp }}/changed-files.txt
         shell: bash
         run: |
           set -euo pipefail
-          gh pr view "$PR" -R "$REPO" --json title,body,files,changed_files > "$PR_JSON"
+          gh pr view "$PR" -R "$REPO" --json title,body,files > "$PR_JSON"
+          gh api "repos/$REPO/pulls/$PR" --jq .changed_files > "$CHANGED_FILES"
           # Keep it out of git status, so the run never sees it as a change.
           echo "/review-input/" >> .git/info/exclude
-          bash .github/scripts/gather-review-input.sh
+          CHANGED_FILES="$CHANGED_FILES" bash .github/scripts/gather-review-input.sh
       # One run, no GitHub access. The JSONL event stream is the reviewer's
       # whole output; post-review.sh reads the review from it.
       - name: Review

@@ -129,9 +129,10 @@ file fixture.rs
 printf 'ok: fixed-later\n'
 
 # Gather-level fixtures for the docs-only classifier. The pr.json stub plays
-# the workflow's `gh pr view --json ...,changed_files` step; the gh stub's api
-# branch answers `gh api --paginate repos/o/r/pulls/1/files` with the complete
-# file list read from $API_FILES_FIXTURE.
+# the workflow's `gh pr view --json title,body,files` step and the changed-files
+# file plays its `gh api ... --jq .changed_files` step; the gh stub's api branch
+# answers `gh api --paginate repos/o/r/pulls/1/files` with the complete file
+# list read from $API_FILES_FIXTURE.
 cat > "$tmp/gh-pr-files" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -146,12 +147,14 @@ SH
 chmod +x "$tmp/gh-pr-files"
 
 run_docs_case() {
-  local name="$1" fixture="$2" api_fixture="$3" expected="$4"
+  local name="$1" fixture="$2" api_fixture="$3" changed="$4" expected="$5"
   local out="$tmp/docs-$name"
 
+  printf '%s\n' "$changed" > "$tmp/changed-files.txt"
   PR_FIXTURE="$fixture" "$tmp/gh-pr-files" pr view 1 -R o/r \
-    --json title,body,files,changed_files > "$tmp/pr.json"
+    --json title,body,files > "$tmp/pr.json"
   BASE="$base" HEAD="$head" PR_JSON="$tmp/pr.json" REPO=o/r PR=1 \
+    CHANGED_FILES="$tmp/changed-files.txt" \
     API_FILES_FIXTURE="$api_fixture" GH="$tmp/gh" \
     OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
 
@@ -160,43 +163,43 @@ run_docs_case() {
 }
 
 cat > "$tmp/docs.json" <<'JSON'
-{"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}],"changed_files":2}
+{"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}]}
 JSON
 cat > "$tmp/docs-files.json" <<'JSON'
 [{"path":"README.md"},{"path":"site/img/logo.png"}]
 JSON
-run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" true
+run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" 2 true
 
 cat > "$tmp/mdx.json" <<'JSON'
-{"title":"Docs","body":"","files":[{"path":"site/x.mdx"}],"changed_files":1}
+{"title":"Docs","body":"","files":[{"path":"site/x.mdx"}]}
 JSON
 cat > "$tmp/mdx-files.json" <<'JSON'
 [{"path":"site/x.mdx"}]
 JSON
-run_docs_case mdx "$tmp/mdx.json" "$tmp/mdx-files.json" false
+run_docs_case mdx "$tmp/mdx.json" "$tmp/mdx-files.json" 1 false
 
 cat > "$tmp/mixed.json" <<'JSON'
-{"title":"Mixed","body":"","files":[{"path":"README.md"},{"path":"src/main.rs"}],"changed_files":2}
+{"title":"Mixed","body":"","files":[{"path":"README.md"},{"path":"src/main.rs"}]}
 JSON
 cat > "$tmp/mixed-files.json" <<'JSON'
 [{"path":"README.md"},{"path":"src/main.rs"}]
 JSON
-run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" false
+run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" 2 false
 
 # A rename from code to docs still has to clear the old path.
 cat > "$tmp/rename.json" <<'JSON'
-{"title":"Rename","body":"","files":[{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}],"changed_files":1}
+{"title":"Rename","body":"","files":[{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}]}
 JSON
 cat > "$tmp/rename-files.json" <<'JSON'
 [{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}]
 JSON
-run_docs_case rename "$tmp/rename.json" "$tmp/rename-files.json" false
+run_docs_case rename "$tmp/rename.json" "$tmp/rename-files.json" 1 false
 
-# An API list shorter than changed_files cannot be trusted.
+# An API list shorter than CHANGED_FILES cannot be trusted.
 cat > "$tmp/truncated.json" <<'JSON'
-{"title":"Truncated","body":"","files":[{"path":"README.md"}],"changed_files":2}
+{"title":"Truncated","body":"","files":[{"path":"README.md"}]}
 JSON
 cat > "$tmp/truncated-files.json" <<'JSON'
 [{"path":"README.md"}]
 JSON
-run_docs_case truncated "$tmp/truncated.json" "$tmp/truncated-files.json" false
+run_docs_case truncated "$tmp/truncated.json" "$tmp/truncated-files.json" 2 false

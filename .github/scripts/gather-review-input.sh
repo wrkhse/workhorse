@@ -109,14 +109,16 @@ done
 cat -- "$PR_JSON" | write_capped "$OUT/pr.json" "$MAX_BYTES" "$OUT/pr.json"
 
 # A docs-only PR gets an advisory verdict. Classification uses the complete
-# file list from the GitHub API: gh pr view's files array stops at 100 entries,
-# while changed_files counts them all. A renamed file must pass on both its old
-# and new path. Anything missing, unreadable or inconsistent fails toward
-# blocking.
+# file list from the GitHub API and the expected count in CHANGED_FILES:
+# gh pr view's files array stops at 100 entries, while the API count covers
+# them all. A renamed file must pass on both its old and new path. Anything
+# missing, unreadable or inconsistent fails toward blocking.
 docs_only=false
-if api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null); then
+changed=$(printf '%s' "${CHANGED_FILES-}" | tr -d '[:space:]')
+if [[ "$changed" =~ ^[0-9]+$ ]] &&
+   api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null); then
   docs_only=$(printf '%s' "$api_files" | jq -rs \
-    --slurpfile pr "$PR_JSON" '
+    --argjson changed "$changed" '
     def image:
       endswith(".png") or endswith(".jpg") or endswith(".gif");
 
@@ -129,13 +131,9 @@ if api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null
 
     if (length == 0 or any(.[]; type != "array")) then
       false
-    elif ($pr | length) != 1 then
-      false
     else
       add as $files
-      | ($pr[0].changed_files?) as $changed
       | if ($files | length) == 0
-           or ($changed | type) != "number"
            or ($changed != ($files | length)) then
           false
         else
