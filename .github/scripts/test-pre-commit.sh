@@ -29,6 +29,16 @@ git add tidy-input.ts
 git commit -qm 'fmt: badly formatted TypeScript'
 git show HEAD:tidy-input.ts | grep -q 'const value = { a: 1 };'
 
+printf 'const = ;\n' > tidy-parse.ts
+git add tidy-parse.ts
+if git commit -qm 'fmt: tidy parse error' > "$work/tidyparse.out" 2>&1; then
+  echo 'tidy parse error commit unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -q 'FAILED at tidy format' "$work/tidyparse.out"
+git restore --staged --worktree tidy-parse.ts
+rm -f tidy-parse.ts
+
 printf 'fn broken( {\n}\n' > parse.rs
 git add parse.rs
 if git commit -qm 'fmt: parse error' > "$work/parse.out" 2>&1; then
@@ -38,6 +48,21 @@ fi
 grep -q 'FAILED at rustfmt' "$work/parse.out"
 git restore --staged --worktree parse.rs
 rm -f parse.rs
+
+printf 'pub fn multi_a()->usize{ 1 }\n' > multi-a.rs
+printf 'fn broken( {\n}\n' > multi-b.rs
+git add multi-a.rs multi-b.rs
+if git commit -qm 'fmt: multi file failure' > "$work/multi.out" 2>&1; then
+  echo 'multi-file failure commit unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -q 'FAILED at rustfmt' "$work/multi.out"
+if ! git diff --quiet -- multi-a.rs; then
+  echo 'successfully formatted file left unstaged' >&2
+  exit 1
+fi
+git restore --staged --worktree multi-a.rs multi-b.rs
+rm -f multi-a.rs multi-b.rs
 
 printf 'one\n' > partial.md
 git add partial.md
@@ -85,6 +110,10 @@ if git commit -qm 'chore: bad pin' > "$work/pin.out" 2>&1; then
   exit 1
 fi
 grep -q 'FAILED at tidy checksum' "$work/pin.out"
+if [ -f "$TIDY_CACHE_ROOT/tidy-$zeros/tidy.tar.gz" ]; then
+  echo 'unverified download was cached' >&2
+  exit 1
+fi
 git restore --staged --worktree .github/tidy.env
 
 echo 'pre-commit hook selftest: all cases passed'

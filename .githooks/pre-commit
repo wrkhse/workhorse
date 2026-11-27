@@ -70,14 +70,12 @@ fi
 
 if ((${#rust_files[@]} > 0)); then
   printf 'pre-commit: rustfmt: formatting %s staged Rust file(s)\n' "${#rust_files[@]}"
-  rustfmt_paths=()
   for file in "${rust_files[@]}"; do
-    rustfmt_paths+=("./$file")
+    if ! rustfmt --edition 2024 --config skip_children=true "./$file"; then
+      fail 'rustfmt'
+    fi
+    git add -- "$file"
   done
-  if ! rustfmt --edition 2024 --config skip_children=true "${rustfmt_paths[@]}"; then
-    fail 'rustfmt'
-  fi
-  git add -- "${rust_files[@]}"
 fi
 
 if ((${#other_files[@]} > 0)); then
@@ -133,7 +131,8 @@ if ((${#other_files[@]} > 0)); then
     fail 'tidy checksum'
   fi
   printf 'pre-commit: tidy: verified checksum %s\n' "$tidy_sha"
-  if true; then
+  binary_sha="$cache_dir/tidy.sha256"
+  if [[ ! -x "$tidy_bin" ]] || [[ ! -f "$binary_sha" ]] || [[ "$(hash_file "$tidy_bin")" != "$(cat "$binary_sha")" ]]; then
     extract_dir="$(mktemp -d)"
     if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
       fail 'tidy extract'
@@ -145,18 +144,17 @@ if ((${#other_files[@]} > 0)); then
     if ! mv "$cache_dir/tidy.tmp" "$tidy_bin"; then
       fail 'tidy install'
     fi
+    hash_file "$tidy_bin" > "$binary_sha"
     rm -rf "$extract_dir"
   fi
   printf 'pre-commit: tidy: cached binary %s\n' "$tidy_bin"
   printf 'pre-commit: tidy: formatting %s staged file(s)\n' "${#other_files[@]}"
-  tidy_paths=()
   for file in "${other_files[@]}"; do
-    tidy_paths+=("./$file")
+    if ! "$tidy_bin" up --skip-unknown "./$file"; then
+      fail 'tidy format'
+    fi
+    git add -- "$file"
   done
-  if ! "$tidy_bin" up --skip-unknown "${tidy_paths[@]}"; then
-    fail 'tidy format'
-  fi
-  git add -- "${other_files[@]}"
 fi
 
 printf 'pre-commit: all checks passed\n'
