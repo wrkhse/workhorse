@@ -66,9 +66,10 @@ jobs:
     steps:
       - name: Report result
         run: |
+          paths_result="${{ needs.paths.result }}"
           result="${{ needs.selftest.result }}"
-          if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-            echo "::error::hook selftest $result"
+          if [ "$paths_result" != "success" ] || [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+            echo "::error::hook selftest did not pass (paths=$paths_result, selftest=$result)"
             exit 1
           fi
           echo "hook selftest: ${result:-skipped} (success when skipped)"
