@@ -11,7 +11,9 @@ trap 'rm -rf "$work"' EXIT
 
 export TIDY_CACHE_ROOT="$work/cache"
 mkdir -p "$work/repo/.githooks" "$work/repo/.github" "$TIDY_CACHE_ROOT"
-cp "$repo_root/rust-toolchain.toml" "$work/repo/rust-toolchain.toml"
+if [[ -f "$repo_root/rust-toolchain.toml" ]]; then
+  cp "$repo_root/rust-toolchain.toml" "$work/repo/rust-toolchain.toml"
+fi
 cd "$work/repo"
 git init -q -b main
 git config user.email precommit@example.invalid
