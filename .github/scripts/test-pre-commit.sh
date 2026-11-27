@@ -11,6 +11,7 @@ trap 'rm -rf "$work"' EXIT
 
 export TIDY_CACHE_ROOT="$work/cache"
 mkdir -p "$work/repo/.githooks" "$work/repo/.github" "$TIDY_CACHE_ROOT"
+cp "$repo_root/rust-toolchain.toml" "$work/repo/rust-toolchain.toml"
 cd "$work/repo"
 git init -q -b main
 git config user.email precommit@example.invalid
@@ -171,7 +172,7 @@ rm -f platform.md
 ones="$(printf '1%.0s' {1..64})"
 while IFS= read -r line; do
   case "$line" in
-    TIDY_RELEASE_BASE=*) printf '%s\n' "${line%%=*}=http://127.0.0.1:9/unreachable" ;;
+    TIDY_RELEASE_BASE=*) printf '%s\n' "${line%%=*}=https://127.0.0.1:9/unreachable" ;;
     TIDY_*SHA256=*) printf '%s\n' "${line%%=*}=$ones" ;;
     *) printf '%s\n' "$line" ;;
   esac

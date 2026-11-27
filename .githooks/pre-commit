@@ -114,7 +114,7 @@ if ((${#other_files[@]} > 0)); then
     printf 'pre-commit: tidy: downloading %s\n' "$tidy_url"
     tmp_dir="$(mktemp -d)"
     trap 'rm -rf "$tmp_dir"' EXIT
-    if ! curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 180 "$tidy_url" -o "$tmp_dir/tidy.tar.gz"; then
+    if ! curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 180 --max-filesize 20000000 "$tidy_url" -o "$tmp_dir/tidy.tar.gz"; then
       fail 'tidy download'
     fi
     downloaded="$(hash_file "$tmp_dir/tidy.tar.gz")"
