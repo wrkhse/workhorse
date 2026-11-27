@@ -3,13 +3,68 @@ name: OpenCode review
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: opencode-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  gather-test:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      self: ${{ steps.filter.outputs.self }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changes to review tooling
+        id: filter
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+            echo "self=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch the base ref by name so the diff uses the PR's current base
+          # branch. A push has no base ref, so compare with its parent commit.
+          if [ "$EVENT" = pull_request ]; then
+            git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            base="origin/$BASE_REF"
+          elif [ "$EVENT" = push ]; then
+            base="HEAD~1"
+          else
+            echo "::error::unsupported event $EVENT"
+            exit 1
+          fi
+
+          changed=$(git diff --name-only "$base" HEAD)
+
+          self=false
+          while IFS= read -r path; do
+            case "$path" in
+              .github/scripts/*|.github/workflows/opencode-review.yml)
+                self=true
+                ;;
+            esac
+          done <<< "$changed"
+          echo "self=$self" >> "$GITHUB_OUTPUT"
+
+  gather-test-run:
+    needs: [changes]
+    if: needs.changes.outputs.self == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -26,9 +81,38 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-review-post.sh
 
+  gather-test:
+    needs: [changes, gather-test-run]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # The filter skips the runner on runs that do not touch review tooling.
+      # A skipped runner is a pass only when the filter said self=false.
+      - name: Summarize fixture tests
+        shell: bash
+        env:
+          RESULT: ${{ needs.gather-test-run.result }}
+          SELF: ${{ needs.changes.outputs.self }}
+        run: |
+          set -euo pipefail
+
+          if { [ "$RESULT" = success ] && [ "$SELF" = true ]; } || \
+             { [ "$RESULT" = skipped ] && [ "$SELF" = false ]; }; then
+            echo "Gather tests: $RESULT (self=$SELF)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Gather tests: $RESULT (self=$SELF) is unexpected." >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::gather-test-run result $RESULT does not match self=$SELF"
+          exit 1
+
   review:
     # Pull requests from forks get no secrets, so they can't sign in.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Scheduled and manually started runs have no pull request to review.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
