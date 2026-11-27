@@ -662,6 +662,16 @@ jq -e --arg footer "$footer" '.body
 ' "$tmp/comment-payload.json" > /dev/null
 printf 'ok: marker comment strips an arbitrary trailing run footer\n'
 
+events "$(reply "$merge_as_is" '[]' 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted 'fixture/reviewer'
+jq -e --arg model 'fixture/reviewer' '
+  .body | split("\n")
+  | .[0] == "<!-- opencode-review -->"
+    and .[1] == "**Verdict: MERGE AS IS**"
+    and .[2] == "Reviewer: \($model)"
+' "$tmp/comment-payload.json" > /dev/null
+printf 'ok: marker comment names the model that produced the verdict\n'
+
 events "$(reply "$fix_first" "$findings" "${prose[@]}")" > "$tmp/events.jsonl"
 FAIL_CLEANUP=1 expect_posted
 # The failed listing must not lead to any GraphQL mutation.
