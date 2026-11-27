@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
@@ -120,7 +120,12 @@ jobs:
   review:
     # Pull requests from forks get no secrets, so they can't sign in.
     # Scheduled and manually started runs have no pull request to review.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # An 'edited' event carries no new commits: review only when the base
+    # branch changed. Title- and body-only edits have no changes.base.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'edited' || github.event.changes.base)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

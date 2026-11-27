@@ -188,14 +188,25 @@ cat > "$tmp/mixed-files.json" <<'JSON'
 JSON
 run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" 4 false
 
-# From wrkhse/workhorse#19, trimmed to one entry (a code rename).
-cat > "$tmp/rename.json" <<'JSON'
-{"title":"Rename","body":"","files":[{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}]}
+# Real REST response from wrkhse/tack#48 (a docs-to-docs rename).
+cat > "$tmp/rename-real.json" <<'JSON'
+{"title":"Rename","body":"","files":[{"path":"crates/luau/src/sandbox/README.md"}]}
 JSON
-cat > "$tmp/rename-files.json" <<'JSON'
-[{"filename":"packages/events/src/events.ts","previous_filename":"worker/src/events.ts","status":"renamed"}]
+cat > "$tmp/rename-real-files.json" <<'JSON'
+[{"filename":"crates/luau/src/sandbox/README.md","previous_filename":"crates/runtime/src/sandbox/README.md","status":"renamed"}]
 JSON
-run_docs_case rename "$tmp/rename.json" "$tmp/rename-files.json" 1 false
+run_docs_case rename-real "$tmp/rename-real.json" "$tmp/rename-real-files.json" 1 true
+
+# Derived from the tack#48 REST shape with a code old path (src/x.rs ->
+# README.md). No real code-to-docs rename exists in the family; this case
+# exercises the old-path guard and must not be docs-only.
+cat > "$tmp/rename-code-old.json" <<'JSON'
+{"title":"Rename","body":"","files":[{"path":"README.md"}]}
+JSON
+cat > "$tmp/rename-code-old-files.json" <<'JSON'
+[{"filename":"README.md","previous_filename":"src/x.rs","status":"renamed"}]
+JSON
+run_docs_case rename-code-old "$tmp/rename-code-old.json" "$tmp/rename-code-old-files.json" 1 false
 
 # An API list shorter than CHANGED_FILES cannot be trusted.
 cat > "$tmp/truncated.json" <<'JSON'
