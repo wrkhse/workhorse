@@ -141,7 +141,7 @@ if ((${#other_files[@]} > 0)); then
   if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
     fail 'tidy extract'
   fi
-  if ! cmp -s "$extract_dir/tidy" "$tidy_bin"; then
+  if [[ ! -f "$tidy_bin" ]] || ! cmp -s "$extract_dir/tidy" "$tidy_bin"; then
     if ! mv "$extract_dir/tidy" "$cache_dir/tidy.tmp"; then
       fail 'tidy install'
     fi
