@@ -15,7 +15,7 @@ on:
         default: ""
         type: string
       primary_model:
-        description: Proof-only primary model (current primary, opencode/hy4-flash-free or test/unreachable)
+        description: Proof-only primary model (current primary, opencode/hy4-flash-free, opencode-go/hy4-flash-free or test/unreachable)
         required: false
         default: ""
         type: string
@@ -144,13 +144,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      PRIMARY_MODEL: test/unreachable
-      REVIEW_FALLBACK_MODEL: opencode/hy4-flash-free
+      PRIMARY_MODEL: opencode/deepseek-v4.1-flash-free
+      REVIEW_FALLBACK_MODEL: opencode-go/hy4-flash-free
       REVIEW_TIMEOUT_SEC: 420
       # Nobody answers prompts in CI, so nothing may ask. The reviewer only
       # reads files in the checkout: no shell, no edits, no web.
       OPENCODE_CONFIG_CONTENT: >-
-        {"small_model":"opencode/deepseek-v4.1-flash-free",
+        {"small_model":"opencode-go/hy4-flash-free",
         "agents":{"build":{"steps":150}},
         "permission":{"read":"allow","bash":"deny","edit":"deny",
         "external_directory":"deny","webfetch":"deny","websearch":"deny",
@@ -179,9 +179,13 @@ jobs:
           : "${PR:?pr_number is required for a proof run}"
           model="$INPUT_MODEL"
           case "$model" in
-            ''|"$ALLOWED_MODEL"|opencode/hy4-flash-free|test/unreachable) ;;
+            opencode-go/deepseek*)
+              echo "::error::Refusing proof-run primary model '$model': Go DeepSeek is not allowed." >&2
+              exit 1
+              ;;
+            ''|"$ALLOWED_MODEL"|opencode/hy4-flash-free|opencode-go/hy4-flash-free|test/unreachable) ;;
             *)
-              echo "::error::Refusing proof-run primary model '$model': use $ALLOWED_MODEL, opencode/hy4-flash-free or test/unreachable." >&2
+              echo "::error::Refusing proof-run primary model '$model': use $ALLOWED_MODEL, opencode/hy4-flash-free, opencode-go/hy4-flash-free or test/unreachable." >&2
               exit 1
               ;;
           esac
