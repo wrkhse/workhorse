@@ -162,3 +162,9 @@ Issues and pull requests follow
 
 Slice 12 is atelier's "Code examples that stay true", built after the first
 end-to-end flow.
+
+## Decided
+
+| Choice | By | When |
+| --- | --- | --- |
+| "Homebrew distribution for every released Workhorse product, through a new org tap" — installs are `brew install wrkhse/tap/<name>` | owner | 2026-11-27 |
