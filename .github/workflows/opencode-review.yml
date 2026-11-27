@@ -400,7 +400,7 @@ jobs:
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
              jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
-             jq -es 'any(.[]; .type == "text" and (.part.text | type == "string"))' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | type == "string") and ((.part.text // "") | length > 0))' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
@@ -411,7 +411,8 @@ jobs:
         id: review_fallback
         if: >-
           always() && steps.carry_forward.outcome == 'skipped' &&
-          steps.review_primary.outputs.failed == 'true'
+          (steps.review_primary.outcome != 'success' ||
+           steps.review_primary.outputs.failed == 'true')
         timeout-minutes: 8
         env:
           MODEL: ${{ env.REVIEW_FALLBACK_MODEL }}
@@ -425,7 +426,7 @@ jobs:
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
              jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
-             jq -es 'any(.[]; .type == "text" and (.part.text | type == "string"))' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | type == "string") and ((.part.text // "") | length > 0))' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
