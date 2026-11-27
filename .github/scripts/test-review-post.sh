@@ -669,3 +669,23 @@ printf '%s\n' 'DELETE repos/owner/repo/issues/comments/122' \
   > "$tmp/expected-cleanup-attempts"
 diff -u -- "$tmp/expected-cleanup-attempts" "$tmp/cleanup-attempts"
 printf 'ok: failed cleanup keeps both posts and exits 0\n'
+
+# A docs-only PR posts an advisory verdict while still carrying every finding.
+# The flag sits beside the fixture diff, as the gather step writes it.
+advisory='**Verdict: ADVISORY**'
+printf 'true\n' > "$tmp/docs-only.txt"
+events "$(reply "$fix_first" "$findings" 'Review summary.')" > "$tmp/events.jsonl"
+expect_posted
+jq -e --arg marker "$marker" --arg advisory "$advisory" '
+  .body | split("\n") | .[0] == $marker and .[1] == $advisory
+    and any(.[]; . == "- a.txt:2: Fix this.")
+    and any(.[]; . == "- a.txt:9: Off the diff.")
+' "$tmp/comment-payload.json" > /dev/null
+jq -e --arg advisory "$advisory" '
+  .event == "COMMENT"
+  and (.body | split("\n") | .[0] == $advisory
+    and any(.[]; . == "- a.txt:9 (SHOULD): Off the diff."))
+  and .comments == [{path: "a.txt", line: 2, side: "RIGHT", body: "Fix this."}]
+' "$tmp/review-payload.json" > /dev/null
+rm -f -- "$tmp/docs-only.txt"
+printf 'ok: docs-only PR posts an ADVISORY verdict with every finding\n'

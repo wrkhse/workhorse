@@ -33,6 +33,11 @@ cat > "$tmp/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1-}" = api && "${2-}" = --paginate && "${3-}" = "repos/o/r/pulls/1/files" ]]; then
+  cat -- "$API_FILES_FIXTURE"
+  exit 0
+fi
+
 if [[ "$#" -lt 3 || "$1" != issue || "$2" != view ]]; then
   echo 'unexpected gh command' >&2
   exit 1
@@ -122,3 +127,122 @@ file fixture.rs
 - fixture.rs:1: #[allow(dead_code)]" ]
 
 printf 'ok: fixed-later\n'
+
+# Gather-level fixtures for the docs-only classifier. The pr.json stub plays
+# the workflow's `gh pr view --json title,body,files` step and the changed-files
+# file plays its `gh api ... --jq .changed_files` step; the gh stub's api branch
+# answers `gh api --paginate repos/o/r/pulls/1/files` with the complete file
+# list read from $API_FILES_FIXTURE.
+cat > "$tmp/gh-pr-files" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -lt 2 || "$1" != pr || "$2" != view ]]; then
+  echo 'unexpected gh command' >&2
+  exit 1
+fi
+
+cat -- "$PR_FIXTURE"
+SH
+chmod +x "$tmp/gh-pr-files"
+
+run_docs_case() {
+  local name="$1" fixture="$2" api_fixture="$3" changed="$4" expected="$5"
+  local out="$tmp/docs-$name"
+
+  printf '%s\n' "$changed" > "$tmp/changed-files.txt"
+  PR_FIXTURE="$fixture" "$tmp/gh-pr-files" pr view 1 -R o/r \
+    --json title,body,files > "$tmp/pr.json"
+  BASE="$base" HEAD="$head" PR_JSON="$tmp/pr.json" REPO=o/r PR=1 \
+    CHANGED_FILES="$tmp/changed-files.txt" \
+    API_FILES_FIXTURE="$api_fixture" GH="$tmp/gh" \
+    OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
+
+  [ "$(cat -- "$out/docs-only.txt")" = "$expected" ]
+  printf 'ok: docs-only %s\n' "$name"
+}
+
+cat > "$tmp/docs.json" <<'JSON'
+{"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}]}
+JSON
+# From wrkhse/workhorse#49 (docs-only).
+cat > "$tmp/docs-files.json" <<'JSON'
+[{"filename":"ARCHITECTURE.md","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" 1 true
+
+# Shaped from the real REST response shape: AGENTS.md is governance, so it
+# must not be classified as docs-only.
+cat > "$tmp/governance.json" <<'JSON'
+{"title":"Governance","body":"","files":[{"path":"AGENTS.md"}]}
+JSON
+cat > "$tmp/governance-files.json" <<'JSON'
+[{"filename":"AGENTS.md","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case governance "$tmp/governance.json" "$tmp/governance-files.json" 1 false
+
+cat > "$tmp/mdx.json" <<'JSON'
+{"title":"Docs","body":"","files":[{"path":"site/x.mdx"}]}
+JSON
+cat > "$tmp/mdx-files.json" <<'JSON'
+[{"filename":"site/x.mdx","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case mdx "$tmp/mdx.json" "$tmp/mdx-files.json" 1 false
+
+cat > "$tmp/mixed.json" <<'JSON'
+{"title":"Mixed","body":"","files":[{"path":"README.md"},{"path":"src/main.rs"}]}
+JSON
+# From wrkhse/workhorse#75 (mixed docs and code).
+cat > "$tmp/mixed-files.json" <<'JSON'
+[{"filename":"PHILOSOPHY.md","previous_filename":null,"status":"modified"},{"filename":"hub.config.ts","previous_filename":null,"status":"modified"},{"filename":"site/scripts/roadmap.test.ts","previous_filename":null,"status":"modified"},{"filename":"site/src/how-it-fits.md","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" 4 false
+
+# Real REST response from wrkhse/tack#48 (a docs-to-docs rename).
+cat > "$tmp/rename-real.json" <<'JSON'
+{"title":"Rename","body":"","files":[{"path":"crates/luau/src/sandbox/README.md"}]}
+JSON
+cat > "$tmp/rename-real-files.json" <<'JSON'
+[{"filename":"crates/luau/src/sandbox/README.md","previous_filename":"crates/runtime/src/sandbox/README.md","status":"renamed"}]
+JSON
+run_docs_case rename-real "$tmp/rename-real.json" "$tmp/rename-real-files.json" 1 true
+
+# Derived from the tack#48 REST shape with a code old path (src/x.rs ->
+# README.md). No real code-to-docs rename exists in the family; this case
+# exercises the old-path guard and must not be docs-only.
+cat > "$tmp/rename-code-old.json" <<'JSON'
+{"title":"Rename","body":"","files":[{"path":"README.md"}]}
+JSON
+cat > "$tmp/rename-code-old-files.json" <<'JSON'
+[{"filename":"README.md","previous_filename":"src/x.rs","status":"renamed"}]
+JSON
+run_docs_case rename-code-old "$tmp/rename-code-old.json" "$tmp/rename-code-old-files.json" 1 false
+
+# An API list shorter than CHANGED_FILES cannot be trusted.
+cat > "$tmp/truncated.json" <<'JSON'
+{"title":"Truncated","body":"","files":[{"path":"README.md"}]}
+JSON
+cat > "$tmp/truncated-files.json" <<'JSON'
+[{"filename":"README.md","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case truncated "$tmp/truncated.json" "$tmp/truncated-files.json" 2 false
+
+# An unreadable CHANGED_FILES must fail closed, never claim docs-only.
+cat > "$tmp/unreadable.json" <<'JSON'
+{"title":"Unreadable","body":"","files":[{"path":"README.md"}]}
+JSON
+cat > "$tmp/unreadable-files.json" <<'JSON'
+[{"filename":"README.md","previous_filename":null,"status":"modified"}]
+JSON
+out="$tmp/docs-unreadable"
+PR_FIXTURE="$tmp/unreadable.json" "$tmp/gh-pr-files" pr view 1 -R o/r \
+  --json title,body,files > "$tmp/pr.json"
+missing_changed="$tmp/no-such-changed-files.txt"
+[ ! -e "$missing_changed" ]
+BASE="$base" HEAD="$head" PR_JSON="$tmp/pr.json" REPO=o/r PR=1 \
+  CHANGED_FILES="$missing_changed" \
+  API_FILES_FIXTURE="$tmp/unreadable-files.json" GH="$tmp/gh" \
+  OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
+
+[ "$(cat -- "$out/docs-only.txt")" = "false" ]
+printf 'ok: docs-only unreadable\n'

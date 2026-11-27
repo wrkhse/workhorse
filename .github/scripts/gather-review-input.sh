@@ -108,6 +108,67 @@ done
 
 cat -- "$PR_JSON" | write_capped "$OUT/pr.json" "$MAX_BYTES" "$OUT/pr.json"
 
+# A docs-only PR gets an advisory verdict. Classification uses the complete
+# file list from the GitHub API and the expected count in the CHANGED_FILES file:
+# gh pr view's files array stops at 100 entries, while the API count covers
+# them all. A renamed file must pass on both its old and new path. Anything
+# missing, unreadable or inconsistent fails toward blocking.
+docs_only=false
+changed=""
+if [ -n "${CHANGED_FILES-}" ] && [ -f "$CHANGED_FILES" ]; then
+  changed=$(cat -- "$CHANGED_FILES" | tr -d '[:space:]') || changed=""
+fi
+if [[ "$changed" =~ ^[0-9]+$ ]] &&
+   api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null); then
+  docs_only=$(printf '%s' "$api_files" | jq -rs \
+    --argjson changed "$changed" '
+    def image:
+      endswith(".png") or endswith(".jpg") or endswith(".gif");
+
+    def allowed:
+      ascii_downcase as $p
+      | ($p | startswith(".github/") | not)
+        and (($p | endswith(".md"))
+          or ((($p | startswith("docs/")) or ($p | startswith("site/")))
+              and ($p | image)));
+
+    # Governance files are never docs-only, on the old and new path of a
+    # rename alike.
+    def governance:
+      . as $p
+      | $p == "AGENTS.md"
+        or $p == "CLAUDE.md"
+        or $p == "CONTRIBUTING.md"
+        or $p == "PHILOSOPHY.md"
+        or $p == "SECURITY.md"
+        or $p == "docs/repository-standards.md"
+        or $p == "docs/issues-and-pull-requests.md"
+        or ($p | startswith(".opencode/"))
+        or ($p | startswith(".github/"))
+        or ($p | split("/") | last | endswith("AGENTS.md"));
+
+    if (length == 0 or any(.[]; type != "array")) then
+      false
+    else
+      add as $files
+      | if ($files | length) == 0
+           or ($changed != ($files | length)) then
+          false
+        else
+          ($files | all(
+            (.filename? // "") as $filename
+            | (.previous_filename? // "") as $previous
+            | ($filename | type == "string" and allowed and (governance | not))
+              and (if (.status? // "") == "renamed" or (.previous_filename? != null) then
+                     ($previous | type == "string" and allowed and (governance | not))
+                   else true end)
+          ))
+        end
+    end
+  ') || docs_only=false
+fi
+printf '%s\n' "$docs_only" > "$OUT/docs-only.txt"
+
 # The capped copy is for the reviewer and may no longer be valid JSON.
 issue=$(jq -r --arg repo "$REPO" '
   def code_snippet:

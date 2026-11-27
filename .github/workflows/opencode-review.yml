@@ -120,7 +120,12 @@ jobs:
   review:
     # Pull requests from forks get no secrets, so they can't sign in.
     # Scheduled and manually started runs have no pull request to review.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # An 'edited' event carries no new commits. When only the title or body
+    # changed, the carry-forward step reuses the last review verdict for this
+    # head SHA instead of running the model again.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -135,15 +140,67 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      # Listing past runs to carry forward a verdict needs actions: read.
+      actions: read
       # Commenting and reacting on a pull request needs pull-requests: write.
       pull-requests: write
       issues: write
     steps:
+      # A title/body-only edit has no new commits. Reuse the most recent
+      # completed review verdict for this exact head SHA; never run the model.
+      - name: Carry forward review on title/body edit
+        id: carry_forward
+        if: >-
+          github.event.action == 'edited' &&
+          !github.event.changes.base
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runs=$(gh api --paginate \
+            "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&status=completed&per_page=100") || exit 1
+          run_ids=$(printf '%s' "$runs" | jq -rs '
+            [ .[] | .workflow_runs[] | select(.name == "OpenCode review") ]
+            | sort_by(.created_at) | reverse | .[].id
+          ') || exit 1
+
+          if [ -z "$run_ids" ]; then
+            echo "::error::No completed OpenCode review run for head $HEAD_SHA."
+            exit 1
+          fi
+
+          verdict=""
+          while IFS= read -r run_id; do
+            [ -n "$run_id" ] || continue
+            jobs=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100") || exit 1
+            conclusion=$(printf '%s' "$jobs" | jq -r '
+              [ .jobs[]? | select(.name == "review") | .conclusion ] | first // empty
+            ') || exit 1
+            case "$conclusion" in
+              success|failure)
+                verdict="$conclusion"
+                break
+                ;;
+            esac
+          done <<< "$run_ids"
+
+          if [ "$verdict" = success ]; then
+            echo "Carried forward review verdict: success."
+            exit 0
+          fi
+          echo "::error::No review verdict to carry forward (got ${verdict:-none})."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.carry_forward.outcome == 'skipped'
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Sign in to OpenCode
+        if: steps.carry_forward.outcome == 'skipped'
         env:
           AUDIENCE: https://opencode.ai/console
           CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID }}
@@ -160,6 +217,7 @@ jobs:
           echo "::add-mask::$token"
           echo "OPENCODE_API_KEY=$token" >> "$GITHUB_ENV"
       - name: Install opencode v1.19.6
+        if: steps.carry_forward.outcome == 'skipped'
         env:
           SHA256: 47734e08968b30cc22a0bffb6d9feeed76ad4aa743213a12122040392d09a057
         shell: bash
@@ -178,6 +236,7 @@ jobs:
       # capping each file at 2 MB and including at most 100 commits.
       # Every cut is noted in NOTES.txt.
       - name: Gather review material
+        if: steps.carry_forward.outcome == 'skipped'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -185,16 +244,19 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           PR_JSON: ${{ runner.temp }}/pr.json
+          CHANGED_FILES: ${{ runner.temp }}/changed-files.txt
         shell: bash
         run: |
           set -euo pipefail
-          gh pr view "$PR" -R "$REPO" --json title,body > "$PR_JSON"
+          gh pr view "$PR" -R "$REPO" --json title,body,files > "$PR_JSON"
+          gh api "repos/$REPO/pulls/$PR" --jq .changed_files > "$CHANGED_FILES"
           # Keep it out of git status, so the run never sees it as a change.
           echo "/review-input/" >> .git/info/exclude
-          bash .github/scripts/gather-review-input.sh
+          CHANGED_FILES="$CHANGED_FILES" bash .github/scripts/gather-review-input.sh
       # One run, no GitHub access. The JSONL event stream is the reviewer's
       # whole output; post-review.sh reads the review from it.
       - name: Review
+        if: steps.carry_forward.outcome == 'skipped'
         env:
           MODEL: opencode/deepseek-v4.1-flash-free
           PROMPT: |
@@ -298,6 +360,7 @@ jobs:
       # Posts the marker comment and inline review, then removes or
       # minimizes earlier ones.
       - name: Post review
+        if: steps.carry_forward.outcome == 'skipped'
         env:
           MODEL: opencode/deepseek-v4.1-flash-free
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
