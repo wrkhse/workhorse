@@ -28,12 +28,14 @@ jobs:
           persist-credentials: false
       - name: Filter hook paths
         id: filter
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/changed"
+          git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed"
           if grep -qE '^(.githooks/|.github/tidy.env$|.github/scripts/test-pre-commit.sh$|.github/workflows/precommit.yml$)' "$RUNNER_TEMP/changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
