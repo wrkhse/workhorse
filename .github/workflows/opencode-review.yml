@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      PRIMARY_MODEL: opencode/deepseek-v4.1-flash-free
+      PRIMARY_MODEL: test/unreachable
       REVIEW_FALLBACK_MODEL: opencode/hy4-flash-free
       REVIEW_TIMEOUT_SEC: 420
       # Nobody answers prompts in CI, so nothing may ask. The reviewer only
