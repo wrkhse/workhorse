@@ -88,6 +88,9 @@ jobs:
       - name: Test review posting on fixtures
         shell: bash
         run: bash .github/scripts/test-review-post.sh
+      - name: Test carry-forward verdict lookup on fixtures
+        shell: bash
+        run: bash .github/scripts/test-carry-forward.sh
 
   gather-test:
     needs: [changes, gather-test-run]
@@ -140,8 +143,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      # Listing past runs to carry forward a verdict needs actions: read.
-      actions: read
+      # Reading commit check-runs to carry forward a verdict needs checks: read.
+      checks: read
       # Commenting and reacting on a pull request needs pull-requests: write.
       pull-requests: write
       issues: write
@@ -157,36 +160,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
 
-          runs=$(gh api --paginate \
-            "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&status=completed&per_page=100") || exit 1
-          run_ids=$(printf '%s' "$runs" | jq -rs '
-            [ .[] | .workflow_runs[] | select(.name == "OpenCode review") ]
-            | sort_by(.created_at) | reverse | .[].id
+          checks=$(gh api --paginate \
+            "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100") || exit 1
+          verdict=$(printf '%s' "$checks" | jq -rs --argjson pr "$PR" '
+            [ .[].check_runs[]
+              | select(.name == "review")
+              | select(.status == "completed")
+              | select(.conclusion == "success" or .conclusion == "failure")
+              | select(.app.id == 15368)
+              | select(any(.pull_requests[]?; .number == $pr))
+            ] as $matches
+            | if ($matches | length) == 0 then error("No review check-run for PR \($pr)")
+              else ($matches | sort_by(.completed_at) | reverse | .[0].conclusion)
+              end
           ') || exit 1
-
-          if [ -z "$run_ids" ]; then
-            echo "::error::No completed OpenCode review run for head $HEAD_SHA."
-            exit 1
-          fi
-
-          verdict=""
-          while IFS= read -r run_id; do
-            [ -n "$run_id" ] || continue
-            jobs=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100") || exit 1
-            conclusion=$(printf '%s' "$jobs" | jq -r '
-              [ .jobs[]? | select(.name == "review") | .conclusion ] | first // empty
-            ') || exit 1
-            case "$conclusion" in
-              success|failure)
-                verdict="$conclusion"
-                break
-                ;;
-            esac
-          done <<< "$run_ids"
 
           if [ "$verdict" = success ]; then
             echo "Carried forward review verdict: success."
