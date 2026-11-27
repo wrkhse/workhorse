@@ -82,6 +82,11 @@ git add -- --dash.rs
 git commit -qm 'fmt: dash filename'
 git show 'HEAD:--dash.rs' | grep -q 'pub fn dash() -> usize {'
 
+printf 'const dash={a:1};\n' > --dash.ts
+git add -- --dash.ts
+git commit -qm 'fmt: dash filename for tidy'
+git show 'HEAD:--dash.ts' | grep -q 'const dash = { a: 1 };'
+
 for cache_dir in "$TIDY_CACHE_ROOT"/tidy-*; do
   printf 'corrupt archive\n' > "$cache_dir/tidy.tar.gz"
 done

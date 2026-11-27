@@ -133,6 +133,7 @@ if ((${#other_files[@]} > 0)); then
   fi
   printf 'pre-commit: tidy: verified checksum %s\n' "$tidy_sha"
   extract_dir="$(mktemp -d)"
+  trap 'rm -rf "$extract_dir"' EXIT
   if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
     fail 'tidy extract'
   fi
@@ -147,6 +148,7 @@ if ((${#other_files[@]} > 0)); then
   fi
   chmod +x "$tidy_bin"
   rm -rf "$extract_dir"
+  trap - EXIT
   printf 'pre-commit: tidy: cached binary %s\n' "$tidy_bin"
   printf 'pre-commit: tidy: formatting %s staged file(s)\n' "${#other_files[@]}"
   for file in "${other_files[@]}"; do

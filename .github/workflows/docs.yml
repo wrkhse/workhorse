@@ -86,9 +86,11 @@ jobs:
       - name: Install tidy
         working-directory: ${{ runner.temp }}
         run: |
-          source "$GITHUB_WORKSPACE/.github/tidy.env"
-          curl -fsSL -o tidy.tar.gz "$TIDY_RELEASE_BASE/$TIDY_VERSION/$TIDY_LINUX_ASSET"
-          echo "$TIDY_LINUX_SHA256  tidy.tar.gz" | sha256sum -c -
+          pin() {
+            awk -F= -v key="$1" '$1==key { print substr($0, index($0,"=")+1); exit }' "$GITHUB_WORKSPACE/.github/tidy.env"
+          }
+          curl -fsSL -o tidy.tar.gz "$(pin TIDY_RELEASE_BASE)/$(pin TIDY_VERSION)/$(pin TIDY_LINUX_ASSET)"
+          echo "$(pin TIDY_LINUX_SHA256)  tidy.tar.gz" | sha256sum -c -
           mkdir tidy-bin
           tar -xzf tidy.tar.gz -C tidy-bin tidy
           echo "$RUNNER_TEMP/tidy-bin" >> "$GITHUB_PATH"
