@@ -82,7 +82,7 @@ fi
 if ((${#other_files[@]} > 0)); then
   TIDY_VERSION="$(pin TIDY_VERSION)"
   release_base="$(pin TIDY_RELEASE_BASE)"
-  platform="$(uname -s)-$(uname -m)"
+  platform="${TIDY_PLATFORM:-$(uname -s)-$(uname -m)}"
   case "$platform" in
     Darwin-arm64)
       asset="$(pin TIDY_DARWIN_ASSET)"
