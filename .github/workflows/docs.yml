@@ -119,6 +119,7 @@ jobs:
       # that status as a parse or config error. It works in a scratch folder
       # outside the checkout.
       - name: format-exit2-proof
+        if: always()
         run: |
           proof="$RUNNER_TEMP/tidy-parse-error"
           mkdir "$proof"
