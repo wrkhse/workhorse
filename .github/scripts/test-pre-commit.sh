@@ -71,4 +71,20 @@ for cache_dir in "$TIDY_CACHE_ROOT"/tidy-*; do
   rm -f "$cache_dir/tidy.tar.gz"
 done
 
+cp .github/tidy.env "$work/tidy.env.orig"
+zeros="$(printf '0%.0s' {1..64})"
+while IFS= read -r line; do
+  case "$line" in
+    TIDY_*SHA256=*) printf '%s\n' "${line%%=*}=$zeros" ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done < "$work/tidy.env.orig" > .github/tidy.env
+git add .github/tidy.env
+if git commit -qm 'chore: bad pin' > "$work/pin.out" 2>&1; then
+  echo 'bad pin commit unexpectedly succeeded' >&2
+  exit 1
+fi
+grep -q 'FAILED at tidy checksum' "$work/pin.out"
+git restore --staged --worktree .github/tidy.env
+
 echo 'pre-commit hook selftest: all cases passed'

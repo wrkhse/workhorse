@@ -133,7 +133,7 @@ if ((${#other_files[@]} > 0)); then
     fail 'tidy checksum'
   fi
   printf 'pre-commit: tidy: verified checksum %s\n' "$tidy_sha"
-  if [[ ! -x "$tidy_bin" ]]; then
+  if true; then
     extract_dir="$(mktemp -d)"
     if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
       fail 'tidy extract'
