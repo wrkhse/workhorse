@@ -12,12 +12,12 @@ on:
       pr_number:
         description: Pull request to review in a proof run
         required: false
-        default: ''
+        default: ""
         type: string
       primary_model:
         description: Proof-only primary model (current primary, opencode/hy4-flash-free or test/unreachable)
         required: false
-        default: ''
+        default: ""
         type: string
 
 concurrency:
