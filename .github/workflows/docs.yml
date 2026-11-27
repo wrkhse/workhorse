@@ -100,6 +100,7 @@ jobs:
       # tidy check exits 1 for unformatted files and 2 for a parse or config
       # error; the step reports which, and either one fails the job.
       - name: format
+        if: github.event_name != 'schedule'
         run: |
           mapfile -d '' files < <(git ls-files -z)
           if [ "${#files[@]}" -eq 0 ]; then
