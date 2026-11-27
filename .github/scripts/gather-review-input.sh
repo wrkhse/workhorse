@@ -108,6 +108,26 @@ done
 
 cat -- "$PR_JSON" | write_capped "$OUT/pr.json" "$MAX_BYTES" "$OUT/pr.json"
 
+# A docs-only PR gets an advisory verdict. The files array comes from the
+# trusted PR JSON; anything missing or unreadable fails toward blocking.
+docs_only=$(jq -r '
+  def image:
+    endswith(".png") or endswith(".jpg") or endswith(".gif") or endswith(".svg");
+
+  if (.files | type) != "array" or (.files | length) == 0 then
+    false
+  else
+    (.files | all(
+      (.path? // "" | ascii_downcase) as $p
+      | ($p | startswith(".github/") | not)
+        and (($p | endswith(".md"))
+          or ((($p | startswith("docs/")) or ($p | startswith("site/")))
+              and ($p | image)))
+    ))
+  end
+' "$PR_JSON") || docs_only=false
+printf '%s\n' "$docs_only" > "$OUT/docs-only.txt"
+
 # The capped copy is for the reviewer and may no longer be valid JSON.
 issue=$(jq -r --arg repo "$REPO" '
   def code_snippet:

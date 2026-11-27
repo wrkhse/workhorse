@@ -586,7 +586,7 @@ repair_reply() {
 # block, invalid findings JSON or no marker) gets one repair turn; a repaired reply
 # that is still invalid fails with the reason validation names.
 prepare() {
-  local events="$1" diff="$2" work="$3" repair_events="$4"
+  local events="$1" diff="$2" work="$3" repair_events="$4" docs_only="$5"
   local status=0 verdict
 
   events_summary "$events" 1
@@ -604,6 +604,12 @@ prepare() {
   esac
 
   IFS= read -r verdict < "$work/verdict"
+  # A docs-only PR is advisory: the findings still post, but the verdict does
+  # not gate the PR. Validation above stays strict for every PR.
+  if [ "$docs_only" = true ]; then
+    verdict='**Verdict: ADVISORY**'
+  fi
+
   marker_comment "$verdict" "$work/summary" "$work/findings.json" \
     > "$work/comment.json"
   right_lines "$diff" > "$work/right-lines"
@@ -621,7 +627,13 @@ main() (
   temp=$(mktemp -d "${out%/}/post-review.XXXXXX")
   trap 'rm -rf -- "$temp"' EXIT
 
-  prepare "$EVENTS" "$DIFF" "$temp" "${out%/}/review-repair.jsonl"
+  docs_only=false
+  docs_only_file="$(dirname -- "$DIFF")/docs-only.txt"
+  if [ -f "$docs_only_file" ]; then
+    IFS= read -r docs_only < "$docs_only_file" || :
+  fi
+
+  prepare "$EVENTS" "$DIFF" "$temp" "${out%/}/review-repair.jsonl" "$docs_only"
 
   comment_id=$(post_marker_comment "$temp/comment.json" \
     "$temp/comment-response.json")

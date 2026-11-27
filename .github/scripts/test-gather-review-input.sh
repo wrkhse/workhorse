@@ -122,3 +122,47 @@ file fixture.rs
 - fixture.rs:1: #[allow(dead_code)]" ]
 
 printf 'ok: fixed-later\n'
+
+# Gather-level fixtures for the docs-only classifier. This gh stub plays the
+# workflow's `gh pr view --json title,body,files` step, so the files array reaches
+# the gather script with the `path` keys GitHub reports.
+cat > "$tmp/gh-pr-files" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -lt 2 || "$1" != pr || "$2" != view ]]; then
+  echo 'unexpected gh command' >&2
+  exit 1
+fi
+
+cat -- "$PR_FIXTURE"
+SH
+chmod +x "$tmp/gh-pr-files"
+
+run_docs_case() {
+  local name="$1" fixture="$2" expected="$3"
+  local out="$tmp/docs-$name"
+
+  PR_FIXTURE="$fixture" "$tmp/gh-pr-files" pr view 1 -R o/r \
+    --json title,body,files > "$tmp/pr.json"
+  BASE="$base" HEAD="$head" PR_JSON="$tmp/pr.json" REPO=o/r GH="$tmp/gh" \
+    OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
+
+  [ "$(cat -- "$out/docs-only.txt")" = "$expected" ]
+  printf 'ok: docs-only %s\n' "$name"
+}
+
+cat > "$tmp/docs.json" <<'JSON'
+{"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}]}
+JSON
+run_docs_case docs "$tmp/docs.json" true
+
+cat > "$tmp/mdx.json" <<'JSON'
+{"title":"Docs","body":"","files":[{"path":"site/x.mdx"}]}
+JSON
+run_docs_case mdx "$tmp/mdx.json" false
+
+cat > "$tmp/mixed.json" <<'JSON'
+{"title":"Mixed","body":"","files":[{"path":"README.md"},{"path":"src/main.rs"}]}
+JSON
+run_docs_case mixed "$tmp/mixed.json" false
