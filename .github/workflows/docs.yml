@@ -74,8 +74,7 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && env.CLOUDFLARE_API_TOKEN != ''
         run: npx cf deploy --message "${GITHUB_SHA}"
 
-  format:
-    if: github.event_name != 'schedule'
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -100,7 +99,8 @@ jobs:
       # does not recognise, such as LICENSE and bun.lock, as they are.
       # tidy check exits 1 for unformatted files and 2 for a parse or config
       # error; the step reports which, and either one fails the job.
-      - name: tidy check
+      - name: format
+        if: github.event_name != 'schedule'
         run: |
           mapfile -d '' files < <(git ls-files -z)
           if [ "${#files[@]}" -eq 0 ]; then
@@ -114,30 +114,12 @@ jobs:
           set -e
           bash .github/scripts/check-tidy-status.sh "$status"
 
-  # Proves the format job's exit-2 path on every run: tidy check must exit
-  # exactly 2 on a tidy.json it cannot parse, and check-tidy-status.sh must name
-  # that status as a parse or config error. It works in a scratch folder
-  # outside the checkout.
-  format-exit2-proof:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install tidy v2.0.0
-        working-directory: ${{ runner.temp }}
-        run: |
-          curl -fsSL -o tidy.tar.gz \
-            https://github.com/lukeed/tidy/releases/download/v2.0.0/tidy-x86_64-unknown-linux-musl.tar.gz
-          echo "4b8166b1cdde610fd783f2d59511b0fb35d15ef96069ef20642b948ab90907ea  tidy.tar.gz" \
-            | sha256sum -c -
-          mkdir tidy-bin
-          tar -xzf tidy.tar.gz -C tidy-bin tidy
-          echo "$RUNNER_TEMP/tidy-bin" >> "$GITHUB_PATH"
-      - name: tidy check exits 2 on an unparsable tidy.json
+      # Proves the format step's exit-2 path on every run: tidy check must exit
+      # exactly 2 on a tidy.json it cannot parse, and check-tidy-status.sh must name
+      # that status as a parse or config error. It works in a scratch folder
+      # outside the checkout.
+      - name: format-exit2-proof
+        if: always()
         run: |
           proof="$RUNNER_TEMP/tidy-parse-error"
           mkdir "$proof"
