@@ -145,6 +145,8 @@ jobs:
       contents: read
       # Listing past runs to carry forward a verdict needs actions: read.
       actions: read
+      # Reading commit check-runs to carry forward a verdict needs checks: read.
+      checks: read
       # Commenting and reacting on a pull request needs pull-requests: write.
       pull-requests: write
       issues: write

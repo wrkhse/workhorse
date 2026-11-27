@@ -2,10 +2,12 @@
 set -euo pipefail
 
 # Offline fixture for the carry-forward lookup in opencode-review.yml. Every
-# completed "review" check-run shares one head SHA: PR 999 passed, this PR (42)
-# failed. An older same-app success for 42 is a repeat run; a newer success
-# comes from a different app. The lookup must select 42's newest GitHub Actions
-# verdict (failure), never the other PR's or the other app's success.
+# completed "review" check-run shares one head SHA: this PR (42) failed, and a
+# newer success comes from PR 999. An older same-app success for 42 is a repeat
+# run; another newer success comes from a different app. The lookup must select
+# 42's newest GitHub Actions verdict (failure), never the other PR's or the
+# other app's success. Dropping the PR-number filter selects the newer PR 999
+# success and fails this test.
 
 # Keep this jq literal identical to the one in the carry_forward step of
 # .github/workflows/opencode-review.yml.
@@ -32,7 +34,7 @@ other_pr=$(jq -nc --arg sha "$sha" '{
   total_count: 1,
   check_runs: [{
     name: "review", head_sha: $sha, status: "completed", conclusion: "success",
-    app: {id: 15368}, completed_at: "2026-11-27T02:00:00Z",
+    app: {id: 15368}, completed_at: "2026-11-27T05:00:00Z",
     pull_requests: [{number: 999}]
   }]
 }')
