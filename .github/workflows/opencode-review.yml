@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: opencode-review-${{ github.event.pull_request.number || github.ref_name }}
+  group: opencode-review-${{ github.event_name == 'pull_request' && github.event.pull_request.number || format('{0}-{1}', github.event_name, github.run_id) }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +32,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
@@ -46,7 +47,12 @@ jobs:
             git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
             base="origin/$BASE_REF"
           elif [ "$EVENT" = push ]; then
-            base="HEAD~1"
+            zero=0000000000000000000000000000000000000000
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ]; then
+              base="$BEFORE"
+            else
+              base="HEAD~1"
+            fi
           else
             echo "::error::unsupported event $EVENT"
             exit 1
