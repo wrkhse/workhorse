@@ -8,10 +8,44 @@ fail() {
   exit 1
 }
 
+pin() {
+  local wanted="$1" line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    key="${line%%=*}"
+    if [[ "$key" == "$wanted" ]]; then
+      value="${line#*=}"
+      printf '%s' "$value"
+      return 0
+    fi
+  done < .github/tidy.env
+  printf 'pre-commit: tidy: missing pin %s in .github/tidy.env\n' "$wanted" >&2
+  fail 'tidy pin'
+}
+
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    printf 'pre-commit: tidy: no SHA-256 tool available\n' >&2
+    fail 'tidy checksum tool'
+  fi
+}
+
+staged_list="$(mktemp)"
+if ! git diff --cached --name-only --diff-filter=ACMR -z > "$staged_list"; then
+  rm -f "$staged_list"
+  fail 'staged file list'
+fi
 staged=()
 while IFS= read -r -d '' file; do
   staged+=("$file")
-done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+done < "$staged_list"
+rm -f "$staged_list"
 
 if ((${#staged[@]} > 0)); then
   for file in "${staged[@]}"; do
@@ -36,64 +70,86 @@ fi
 
 if ((${#rust_files[@]} > 0)); then
   printf 'pre-commit: rustfmt: formatting %s staged Rust file(s)\n' "${#rust_files[@]}"
-  if ! rustfmt --edition 2024 "${rust_files[@]}"; then
+  rustfmt_paths=()
+  for file in "${rust_files[@]}"; do
+    rustfmt_paths+=("./$file")
+  done
+  if ! rustfmt --edition 2024 --config skip_children=true "${rustfmt_paths[@]}"; then
     fail 'rustfmt'
   fi
   git add -- "${rust_files[@]}"
 fi
 
 if ((${#other_files[@]} > 0)); then
-  # shellcheck source=.github/tidy.env
-  source .github/tidy.env
+  TIDY_VERSION="$(pin TIDY_VERSION)"
+  release_base="$(pin TIDY_RELEASE_BASE)"
   platform="$(uname -s)-$(uname -m)"
   case "$platform" in
     Darwin-arm64)
-      tidy_url="${TIDY_DARWIN_URL}"
-      tidy_sha="${TIDY_DARWIN_SHA256}"
+      asset="$(pin TIDY_DARWIN_ASSET)"
+      tidy_sha="$(pin TIDY_DARWIN_SHA256)"
       ;;
     Darwin-x86_64)
-      tidy_url="${TIDY_DARWIN_X86_URL}"
-      tidy_sha="${TIDY_DARWIN_X86_SHA256}"
+      asset="$(pin TIDY_DARWIN_X86_ASSET)"
+      tidy_sha="$(pin TIDY_DARWIN_X86_SHA256)"
       ;;
     Linux-x86_64)
-      tidy_url="${TIDY_LINUX_URL}"
-      tidy_sha="${TIDY_LINUX_SHA256}"
+      asset="$(pin TIDY_LINUX_ASSET)"
+      tidy_sha="$(pin TIDY_LINUX_SHA256)"
       ;;
     *)
       printf 'pre-commit: tidy: unsupported platform %s\n' "$platform" >&2
       fail 'tidy platform'
       ;;
   esac
+  tidy_url="$release_base/${TIDY_VERSION}/$asset"
   cache_dir="$HOME/.cache/wrkhse/tidy-${tidy_sha}"
+  archive="$cache_dir/tidy.tar.gz"
   tidy_bin="$cache_dir/tidy"
-  if [[ ! -x "$tidy_bin" ]]; then
-    printf 'pre-commit: tidy: verifying checksum %s\n' "$tidy_sha"
+  mkdir -p "$cache_dir"
+  if [[ ! -f "$archive" ]]; then
+    printf 'pre-commit: tidy: downloading %s\n' "$tidy_url"
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
-    if ! curl -fsSL "$tidy_url" -o "$tmp_dir/tidy.tar.gz"; then
+    if ! curl -fsSL --connect-timeout 10 --max-time 180 "$tidy_url" -o "$tmp_dir/tidy.tar.gz"; then
       fail 'tidy download'
     fi
-    if command -v sha256sum >/dev/null 2>&1; then
-      actual="$(sha256sum "$tmp_dir/tidy.tar.gz" | awk '{print $1}')"
-    elif command -v shasum >/dev/null 2>&1; then
-      actual="$(shasum -a 256 "$tmp_dir/tidy.tar.gz" | awk '{print $1}')"
-    else
-      printf 'pre-commit: tidy: no SHA-256 tool available\n' >&2
-      fail 'tidy checksum tool'
-    fi
-    if [[ "$actual" != "$tidy_sha" ]]; then
-      printf 'pre-commit: tidy checksum mismatch: expected %s, got %s\n' "$tidy_sha" "$actual" >&2
+    downloaded="$(hash_file "$tmp_dir/tidy.tar.gz")"
+    if [[ "$downloaded" != "$tidy_sha" ]]; then
+      printf 'pre-commit: tidy checksum mismatch: expected %s, got %s\n' "$tidy_sha" "$downloaded" >&2
       fail 'tidy checksum'
     fi
-    mkdir -p "$cache_dir"
-    if ! tar -xzf "$tmp_dir/tidy.tar.gz" -C "$cache_dir" tidy; then
+    if ! mv "$tmp_dir/tidy.tar.gz" "$archive"; then
+      fail 'tidy cache'
+    fi
+    rm -rf "$tmp_dir"
+  fi
+  cached="$(hash_file "$archive")"
+  if [[ "$cached" != "$tidy_sha" ]]; then
+    printf 'pre-commit: tidy checksum mismatch: expected %s, got %s\n' "$tidy_sha" "$cached" >&2
+    fail 'tidy checksum'
+  fi
+  printf 'pre-commit: tidy: verified checksum %s\n' "$tidy_sha"
+  if [[ ! -x "$tidy_bin" ]]; then
+    extract_dir="$(mktemp -d)"
+    if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
       fail 'tidy extract'
     fi
-    chmod +x "$tidy_bin"
+    if ! mv "$extract_dir/tidy" "$cache_dir/tidy.tmp"; then
+      fail 'tidy install'
+    fi
+    chmod +x "$cache_dir/tidy.tmp"
+    if ! mv "$cache_dir/tidy.tmp" "$tidy_bin"; then
+      fail 'tidy install'
+    fi
+    rm -rf "$extract_dir"
   fi
   printf 'pre-commit: tidy: cached binary %s\n' "$tidy_bin"
   printf 'pre-commit: tidy: formatting %s staged file(s)\n' "${#other_files[@]}"
-  if ! "$tidy_bin" up --skip-unknown "${other_files[@]}"; then
+  tidy_paths=()
+  for file in "${other_files[@]}"; do
+    tidy_paths+=("./$file")
+  done
+  if ! "$tidy_bin" up --skip-unknown "${tidy_paths[@]}"; then
     fail 'tidy format'
   fi
   git add -- "${other_files[@]}"

@@ -87,7 +87,7 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           source "$GITHUB_WORKSPACE/.github/tidy.env"
-          curl -fsSL -o tidy.tar.gz "$TIDY_LINUX_URL"
+          curl -fsSL -o tidy.tar.gz "$TIDY_RELEASE_BASE/$TIDY_VERSION/$TIDY_LINUX_ASSET"
           echo "$TIDY_LINUX_SHA256  tidy.tar.gz" | sha256sum -c -
           mkdir tidy-bin
           tar -xzf tidy.tar.gz -C tidy-bin tidy
