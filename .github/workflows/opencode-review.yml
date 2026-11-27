@@ -35,7 +35,7 @@ jobs:
       # Nobody answers prompts in CI, so nothing may ask. The reviewer only
       # reads files in the checkout: no shell, no edits, no web.
       OPENCODE_CONFIG_CONTENT: >-
-        {"small_model":"opencode-go/deepseek-v4.1-flash",
+        {"small_model":"opencode/deepseek-v4.1-flash-free",
         "agents":{"build":{"steps":150}},
         "permission":{"read":"allow","bash":"deny","edit":"deny",
         "external_directory":"deny","webfetch":"deny","websearch":"deny",
@@ -104,7 +104,7 @@ jobs:
       # whole output; post-review.sh reads the review from it.
       - name: Review
         env:
-          MODEL: opencode-go/deepseek-v4.1-flash
+          MODEL: opencode/deepseek-v4.1-flash-free
           PROMPT: |
             You review pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }}. You have no shell. Everything you need is in
@@ -207,7 +207,7 @@ jobs:
       # minimizes earlier ones.
       - name: Post review
         env:
-          MODEL: opencode-go/deepseek-v4.1-flash
+          MODEL: opencode/deepseek-v4.1-flash-free
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
