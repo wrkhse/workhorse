@@ -132,6 +132,21 @@ if [[ "$changed" =~ ^[0-9]+$ ]] &&
           or ((($p | startswith("docs/")) or ($p | startswith("site/")))
               and ($p | image)));
 
+    # Governance files are never docs-only, on the old and new path of a
+    # rename alike.
+    def governance:
+      . as $p
+      | $p == "AGENTS.md"
+        or $p == "CLAUDE.md"
+        or $p == "CONTRIBUTING.md"
+        or $p == "PHILOSOPHY.md"
+        or $p == "SECURITY.md"
+        or $p == "docs/repository-standards.md"
+        or $p == "docs/issues-and-pull-requests.md"
+        or ($p | startswith(".opencode/"))
+        or ($p | startswith(".github/"))
+        or ($p | split("/") | last | endswith("AGENTS.md"));
+
     if (length == 0 or any(.[]; type != "array")) then
       false
     else
@@ -142,9 +157,10 @@ if [[ "$changed" =~ ^[0-9]+$ ]] &&
         else
           ($files | all(
             (.filename? // "") as $filename
-            | ($filename | type == "string" and allowed)
+            | (.previous_filename? // "") as $previous
+            | ($filename | type == "string" and allowed and (governance | not))
               and (if (.status? // "") == "renamed" or (.previous_filename? != null) then
-                     (.previous_filename? // "" | type == "string" and allowed)
+                     ($previous | type == "string" and allowed and (governance | not))
                    else true end)
           ))
         end

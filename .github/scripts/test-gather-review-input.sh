@@ -165,11 +165,21 @@ run_docs_case() {
 cat > "$tmp/docs.json" <<'JSON'
 {"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}]}
 JSON
-# From wrkhse/workhorse#79 (docs-only).
+# From wrkhse/workhorse#49 (docs-only).
 cat > "$tmp/docs-files.json" <<'JSON'
-[{"filename":"PHILOSOPHY.md","previous_filename":null,"status":"modified"}]
+[{"filename":"ARCHITECTURE.md","previous_filename":null,"status":"modified"}]
 JSON
 run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" 1 true
+
+# Shaped from the real REST response shape: AGENTS.md is governance, so it
+# must not be classified as docs-only.
+cat > "$tmp/governance.json" <<'JSON'
+{"title":"Governance","body":"","files":[{"path":"AGENTS.md"}]}
+JSON
+cat > "$tmp/governance-files.json" <<'JSON'
+[{"filename":"AGENTS.md","previous_filename":null,"status":"modified"}]
+JSON
+run_docs_case governance "$tmp/governance.json" "$tmp/governance-files.json" 1 false
 
 cat > "$tmp/mdx.json" <<'JSON'
 {"title":"Docs","body":"","files":[{"path":"site/x.mdx"}]}
@@ -216,3 +226,23 @@ cat > "$tmp/truncated-files.json" <<'JSON'
 [{"filename":"README.md","previous_filename":null,"status":"modified"}]
 JSON
 run_docs_case truncated "$tmp/truncated.json" "$tmp/truncated-files.json" 2 false
+
+# An unreadable CHANGED_FILES must fail closed, never claim docs-only.
+cat > "$tmp/unreadable.json" <<'JSON'
+{"title":"Unreadable","body":"","files":[{"path":"README.md"}]}
+JSON
+cat > "$tmp/unreadable-files.json" <<'JSON'
+[{"filename":"README.md","previous_filename":null,"status":"modified"}]
+JSON
+out="$tmp/docs-unreadable"
+PR_FIXTURE="$tmp/unreadable.json" "$tmp/gh-pr-files" pr view 1 -R o/r \
+  --json title,body,files > "$tmp/pr.json"
+missing_changed="$tmp/no-such-changed-files.txt"
+[ ! -e "$missing_changed" ]
+BASE="$base" HEAD="$head" PR_JSON="$tmp/pr.json" REPO=o/r PR=1 \
+  CHANGED_FILES="$missing_changed" \
+  API_FILES_FIXTURE="$tmp/unreadable-files.json" GH="$tmp/gh" \
+  OUT="$out" MAX_BYTES=1000 MAX_COMMITS=100 "$gather"
+
+[ "$(cat -- "$out/docs-only.txt")" = "false" ]
+printf 'ok: docs-only unreadable\n'
