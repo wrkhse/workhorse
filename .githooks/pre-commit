@@ -10,6 +10,7 @@ fail() {
 
 pin() {
   local wanted="$1" line key value
+  [[ -r .github/tidy.env ]] || fail 'tidy pin'
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
       ''|\#*) continue ;;
@@ -144,6 +145,7 @@ if ((${#other_files[@]} > 0)); then
       fail 'tidy install'
     fi
   fi
+  chmod +x "$tidy_bin"
   rm -rf "$extract_dir"
   printf 'pre-commit: tidy: cached binary %s\n' "$tidy_bin"
   printf 'pre-commit: tidy: formatting %s staged file(s)\n' "${#other_files[@]}"

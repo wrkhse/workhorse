@@ -95,6 +95,14 @@ grep -q 'FAILED at tidy checksum' "$work/sha.out"
 for cache_dir in "$TIDY_CACHE_ROOT"/tidy-*; do
   rm -f "$cache_dir/tidy.tar.gz"
 done
+for cache_dir in "$TIDY_CACHE_ROOT"/tidy-*; do
+  printf 'not a tidy binary\n' > "$cache_dir/tidy"
+  chmod -x "$cache_dir/tidy"
+done
+printf '# cached binary\n' > cache.md
+git add cache.md
+git commit -qm 'fmt: cached binary repair'
+git show HEAD:cache.md | grep -q '# cached binary'
 
 cp .github/tidy.env "$work/tidy.env.orig"
 zeros="$(printf '0%.0s' {1..64})"
