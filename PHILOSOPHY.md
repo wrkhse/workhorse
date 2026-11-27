@@ -71,11 +71,13 @@ not built yet:
 | barn      | a sandbox and runtime-stall engine                                                          | stalls, one per tool, plus runtimes (Luau first; QuickJS or V8 later)                                | tack launches it as a program; tools use its stalls; `control` JSON-RPC; listeners; CLI | slice 1 in progress (#21); runtime stalls planned (#23)                                    |
 | sourcefed | a source event manager: takes in events from every source and feeds them on                 | Luau sources; plugins such as Chauffeur's triage hook                                                | tack: agent tools, MCP, CLI, client                                                     | TypeScript version live; sourcefed-core prerelease core-v0.1.0-rc.1 (#86 still open)       |
 | Chauffeur | a judgment engine: classifies or judges input against the schema and parameters you give it | rules, rulebooks, judges; Luau facts and plugins                                                     | tack: harness adapters, CLI, `ask_chauffeur`; sourcefed sdk hooks                       | Rust core in progress (#57)                                                                |
-| atelier   | a CI engine for monorepos                                                                   | presets: gates per language, metrics, agent review                                                   | moon and GitHub checks                                                                  | Rust gate presets shipped (v0.2.0-rc.1, #87); metrics (#88) and agent review (#89) open    |
+| atelier   | a CI engine for monorepos: fast contained runs, a versioned results file, one check per gate, affected-only gates, a digest-pinned image, main-only caches, sharding, cancelled superseded runs and tracked CI timing | presets write results (gates per language, metrics, agent review); opt-in apps read results or request runs through sourcefed: metrics history, visualizer, review, docs gate and sweep, simplify, builder — each with its own permissions; no plugins in atelier | agents reach it through tack; apps read results or sourcefed run requests; moon and GitHub checks | design in [atelier#1](https://github.com/wrkhse/atelier/issues/1); Rust gate presets shipped (v0.2.0-rc.1, #87); metrics (#88) and agent review (#89) open |
 
 tack is how tools reach agents: sourcefed and Chauffeur are tools built on tack,
-so their connections are the ones tack builds. atelier runs its gates through
-moon and GitHub checks.
+so their connections are the ones tack builds. atelier's core writes a versioned
+results file; its apps read that file or request runs through sourcefed, each opt-in
+with its own permissions. atelier has no plugins: agents reach it through tack. See
+[atelier#1](https://github.com/wrkhse/atelier/issues/1) for the design.
 barn is the sandbox and runtime-stall engine. tack runs barn as its own
 program: it launches the barn binary, which starts the stall and returns the
 host endpoint, a socket path and single-use token, over a pipe. tack talks to
