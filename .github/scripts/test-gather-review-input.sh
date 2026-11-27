@@ -165,33 +165,35 @@ run_docs_case() {
 cat > "$tmp/docs.json" <<'JSON'
 {"title":"Docs","body":"","files":[{"path":"README.md"},{"path":"site/img/logo.png"}]}
 JSON
+# From wrkhse/workhorse#79 (docs-only).
 cat > "$tmp/docs-files.json" <<'JSON'
-[{"path":"README.md"},{"path":"site/img/logo.png"}]
+[{"filename":"PHILOSOPHY.md","previous_filename":null,"status":"modified"}]
 JSON
-run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" 2 true
+run_docs_case docs "$tmp/docs.json" "$tmp/docs-files.json" 1 true
 
 cat > "$tmp/mdx.json" <<'JSON'
 {"title":"Docs","body":"","files":[{"path":"site/x.mdx"}]}
 JSON
 cat > "$tmp/mdx-files.json" <<'JSON'
-[{"path":"site/x.mdx"}]
+[{"filename":"site/x.mdx","previous_filename":null,"status":"modified"}]
 JSON
 run_docs_case mdx "$tmp/mdx.json" "$tmp/mdx-files.json" 1 false
 
 cat > "$tmp/mixed.json" <<'JSON'
 {"title":"Mixed","body":"","files":[{"path":"README.md"},{"path":"src/main.rs"}]}
 JSON
+# From wrkhse/workhorse#75 (mixed docs and code).
 cat > "$tmp/mixed-files.json" <<'JSON'
-[{"path":"README.md"},{"path":"src/main.rs"}]
+[{"filename":"PHILOSOPHY.md","previous_filename":null,"status":"modified"},{"filename":"hub.config.ts","previous_filename":null,"status":"modified"},{"filename":"site/scripts/roadmap.test.ts","previous_filename":null,"status":"modified"},{"filename":"site/src/how-it-fits.md","previous_filename":null,"status":"modified"}]
 JSON
-run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" 2 false
+run_docs_case mixed "$tmp/mixed.json" "$tmp/mixed-files.json" 4 false
 
-# A rename from code to docs still has to clear the old path.
+# From wrkhse/workhorse#19, trimmed to one entry (a code rename).
 cat > "$tmp/rename.json" <<'JSON'
 {"title":"Rename","body":"","files":[{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}]}
 JSON
 cat > "$tmp/rename-files.json" <<'JSON'
-[{"path":"README.md","previous_filename":"src/x.rs","changeType":"renamed"}]
+[{"filename":"packages/events/src/events.ts","previous_filename":"worker/src/events.ts","status":"renamed"}]
 JSON
 run_docs_case rename "$tmp/rename.json" "$tmp/rename-files.json" 1 false
 
@@ -200,6 +202,6 @@ cat > "$tmp/truncated.json" <<'JSON'
 {"title":"Truncated","body":"","files":[{"path":"README.md"}]}
 JSON
 cat > "$tmp/truncated-files.json" <<'JSON'
-[{"path":"README.md"}]
+[{"filename":"README.md","previous_filename":null,"status":"modified"}]
 JSON
 run_docs_case truncated "$tmp/truncated.json" "$tmp/truncated-files.json" 2 false

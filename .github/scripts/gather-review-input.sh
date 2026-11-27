@@ -109,12 +109,15 @@ done
 cat -- "$PR_JSON" | write_capped "$OUT/pr.json" "$MAX_BYTES" "$OUT/pr.json"
 
 # A docs-only PR gets an advisory verdict. Classification uses the complete
-# file list from the GitHub API and the expected count in CHANGED_FILES:
+# file list from the GitHub API and the expected count in the CHANGED_FILES file:
 # gh pr view's files array stops at 100 entries, while the API count covers
 # them all. A renamed file must pass on both its old and new path. Anything
 # missing, unreadable or inconsistent fails toward blocking.
 docs_only=false
-changed=$(printf '%s' "${CHANGED_FILES-}" | tr -d '[:space:]')
+changed=""
+if [ -n "${CHANGED_FILES-}" ] && [ -f "$CHANGED_FILES" ]; then
+  changed=$(cat -- "$CHANGED_FILES" | tr -d '[:space:]') || changed=""
+fi
 if [[ "$changed" =~ ^[0-9]+$ ]] &&
    api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null); then
   docs_only=$(printf '%s' "$api_files" | jq -rs \
@@ -138,9 +141,9 @@ if [[ "$changed" =~ ^[0-9]+$ ]] &&
           false
         else
           ($files | all(
-            (.path? // "") as $path
-            | ($path | type == "string" and allowed)
-              and (if (.changeType? // "") == "renamed" or (.previous_filename? != null) then
+            (.filename? // "") as $filename
+            | ($filename | type == "string" and allowed)
+              and (if (.status? // "") == "renamed" or (.previous_filename? != null) then
                      (.previous_filename? // "" | type == "string" and allowed)
                    else true end)
           ))
