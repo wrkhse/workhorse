@@ -172,10 +172,11 @@ jobs:
               | select(.name == "review")
               | select(.status == "completed")
               | select(.conclusion == "success" or .conclusion == "failure")
+              | select(.app.id == 15368)
               | select(any(.pull_requests[]?; .number == $pr))
             ] as $matches
-            | if ($matches | length) == 1 then $matches[0].conclusion
-              else error("Expected exactly one review check-run for PR \($pr); got \($matches | length)")
+            | if ($matches | length) == 0 then error("No review check-run for PR \($pr)")
+              else ($matches | sort_by(.completed_at) | reverse | .[0].conclusion)
               end
           ') || exit 1
 
