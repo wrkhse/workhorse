@@ -131,12 +131,11 @@ if ((${#other_files[@]} > 0)); then
     fail 'tidy checksum'
   fi
   printf 'pre-commit: tidy: verified checksum %s\n' "$tidy_sha"
-  binary_sha="$cache_dir/tidy.sha256"
-  if [[ ! -x "$tidy_bin" ]] || [[ ! -f "$binary_sha" ]] || [[ "$(hash_file "$tidy_bin")" != "$(cat "$binary_sha")" ]]; then
-    extract_dir="$(mktemp -d)"
-    if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
-      fail 'tidy extract'
-    fi
+  extract_dir="$(mktemp -d)"
+  if ! tar -xzf "$archive" -C "$extract_dir" tidy; then
+    fail 'tidy extract'
+  fi
+  if ! cmp -s "$extract_dir/tidy" "$tidy_bin"; then
     if ! mv "$extract_dir/tidy" "$cache_dir/tidy.tmp"; then
       fail 'tidy install'
     fi
@@ -144,9 +143,8 @@ if ((${#other_files[@]} > 0)); then
     if ! mv "$cache_dir/tidy.tmp" "$tidy_bin"; then
       fail 'tidy install'
     fi
-    hash_file "$tidy_bin" > "$binary_sha"
-    rm -rf "$extract_dir"
   fi
+  rm -rf "$extract_dir"
   printf 'pre-commit: tidy: cached binary %s\n' "$tidy_bin"
   printf 'pre-commit: tidy: formatting %s staged file(s)\n' "${#other_files[@]}"
   for file in "${other_files[@]}"; do

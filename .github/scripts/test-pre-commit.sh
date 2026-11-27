@@ -57,8 +57,8 @@ if git commit -qm 'fmt: multi file failure' > "$work/multi.out" 2>&1; then
   exit 1
 fi
 grep -q 'FAILED at rustfmt' "$work/multi.out"
-if ! git diff --quiet -- multi-a.rs; then
-  echo 'successfully formatted file left unstaged' >&2
+if ! git show :multi-a.rs | grep -q 'pub fn multi_a() -> usize {'; then
+  echo 'successfully formatted file was not staged' >&2
   exit 1
 fi
 git restore --staged --worktree multi-a.rs multi-b.rs
