@@ -146,7 +146,7 @@ jobs:
     env:
       PRIMARY_MODEL: opencode/deepseek-v4.1-flash-free
       REVIEW_FALLBACK_MODEL: opencode/hy4-flash-free
-      REVIEW_TIMEOUT_SEC: 450
+      REVIEW_TIMEOUT_SEC: 420
       # Nobody answers prompts in CI, so nothing may ask. The reviewer only
       # reads files in the checkout: no shell, no edits, no web.
       OPENCODE_CONFIG_CONTENT: >-
@@ -400,6 +400,7 @@ jobs:
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
              jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
+            echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
             echo "failed=true" >> "$GITHUB_OUTPUT"
@@ -423,8 +424,10 @@ jobs:
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
              jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
+            echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
+            echo "failed=true" >> "$GITHUB_OUTPUT"
             echo "::error::Primary and fallback reviews both failed (fallback status $status for $MODEL)."
             exit 1
           fi
@@ -433,8 +436,10 @@ jobs:
       - name: Post review
         if: >-
           always() && steps.carry_forward.outcome == 'skipped' &&
-          (steps.review_primary.outcome == 'success' ||
-           steps.review_fallback.outcome == 'success')
+          ((steps.review_primary.outcome == 'success' &&
+            steps.review_primary.outputs.failed == 'false') ||
+           (steps.review_fallback.outcome == 'success' &&
+            steps.review_fallback.outputs.failed == 'false'))
         env:
           MODEL: ${{ env.REVIEW_MODEL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
