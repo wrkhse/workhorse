@@ -188,7 +188,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr view "$PR" -R "$REPO" --json title,body,files > "$PR_JSON"
+          gh pr view "$PR" -R "$REPO" --json title,body,files,changed_files > "$PR_JSON"
           # Keep it out of git status, so the run never sees it as a change.
           echo "/review-input/" >> .git/info/exclude
           bash .github/scripts/gather-review-input.sh

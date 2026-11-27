@@ -108,24 +108,48 @@ done
 
 cat -- "$PR_JSON" | write_capped "$OUT/pr.json" "$MAX_BYTES" "$OUT/pr.json"
 
-# A docs-only PR gets an advisory verdict. The files array comes from the
-# trusted PR JSON; anything missing or unreadable fails toward blocking.
-docs_only=$(jq -r '
-  def image:
-    endswith(".png") or endswith(".jpg") or endswith(".gif") or endswith(".svg");
+# A docs-only PR gets an advisory verdict. Classification uses the complete
+# file list from the GitHub API: gh pr view's files array stops at 100 entries,
+# while changed_files counts them all. A renamed file must pass on both its old
+# and new path. Anything missing, unreadable or inconsistent fails toward
+# blocking.
+docs_only=false
+if api_files=$("$GH" api --paginate "repos/$REPO/pulls/${PR-}/files" 2>/dev/null); then
+  docs_only=$(printf '%s' "$api_files" | jq -rs \
+    --slurpfile pr "$PR_JSON" '
+    def image:
+      endswith(".png") or endswith(".jpg") or endswith(".gif");
 
-  if (.files | type) != "array" or (.files | length) == 0 then
-    false
-  else
-    (.files | all(
-      (.path? // "" | ascii_downcase) as $p
+    def allowed:
+      ascii_downcase as $p
       | ($p | startswith(".github/") | not)
         and (($p | endswith(".md"))
           or ((($p | startswith("docs/")) or ($p | startswith("site/")))
-              and ($p | image)))
-    ))
-  end
-' "$PR_JSON") || docs_only=false
+              and ($p | image)));
+
+    if (length == 0 or any(.[]; type != "array")) then
+      false
+    elif ($pr | length) != 1 then
+      false
+    else
+      add as $files
+      | ($pr[0].changed_files?) as $changed
+      | if ($files | length) == 0
+           or ($changed | type) != "number"
+           or ($changed != ($files | length)) then
+          false
+        else
+          ($files | all(
+            (.path? // "") as $path
+            | ($path | type == "string" and allowed)
+              and (if (.changeType? // "") == "renamed" or (.previous_filename? != null) then
+                     (.previous_filename? // "" | type == "string" and allowed)
+                   else true end)
+          ))
+        end
+    end
+  ') || docs_only=false
+fi
 printf '%s\n' "$docs_only" > "$OUT/docs-only.txt"
 
 # The capped copy is for the reviewer and may no longer be valid JSON.
