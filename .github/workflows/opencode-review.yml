@@ -1,12 +1,9 @@
 name: OpenCode review
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
-  schedule:
-    - cron: "0 3 * * *"
+  workflow_run:
+    workflows: [Docs]
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -21,7 +18,7 @@ on:
         type: string
 
 concurrency:
-  group: opencode-review-${{ github.event_name == 'pull_request' && github.event.pull_request.number || format('{0}-{1}', github.event_name, github.run_id) }}
+  group: opencode-review-${{ github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event_name, github.run_id) }}
   cancel-in-progress: true
 
 jobs:
@@ -42,12 +39,12 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.event.workflow_run.head_branch }}
+          BEFORE: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
-          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] || [ "$EVENT" = workflow_run ]; then
             echo "self=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -138,8 +135,11 @@ jobs:
     # changed, the carry-forward step reuses the last review verdict for this
     # head SHA instead of running the model again.
     if: >-
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.pull_requests[0].number != null) ||
       (github.event_name == 'workflow_dispatch' && inputs.pr_number != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -201,6 +201,47 @@ jobs:
           read -r head base <<< "$info"
           echo "pr_head=$head" >> "$GITHUB_OUTPUT"
           echo "pr_base=$base" >> "$GITHUB_OUTPUT"
+      - name: Resolve review target
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          WS_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          WS_HEAD: ${{ github.event.workflow_run.head_sha }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          INPUT_HEAD: ${{ steps.dispatch.outputs.pr_head }}
+          INPUT_BASE: ${{ steps.dispatch.outputs.pr_base }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = workflow_dispatch ]; then
+            pr="$INPUT_PR"
+            head="$INPUT_HEAD"
+            base="$INPUT_BASE"
+          else
+            pr="$WS_PR"
+            head="$WS_HEAD"
+            base=$(gh api "repos/$REPO/pulls/$pr" --jq .base.sha)
+          fi
+
+          if [ -z "$pr" ]; then
+            echo "::error::No pull request number to review." >&2
+            exit 1
+          fi
+          if [ -z "$head" ]; then
+            echo "::error::No review head SHA for pull request $pr." >&2
+            exit 1
+          fi
+          if [ -z "$base" ]; then
+            echo "::error::No review base SHA for pull request $pr." >&2
+            exit 1
+          fi
+
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
       # A title/body-only edit has no new commits. Reuse the most recent
       # completed review verdict for this exact head SHA; never run the model.
       - name: Carry forward review on title/body edit
@@ -211,8 +252,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.target.outputs.head }}
+          PR: ${{ steps.target.outputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
@@ -243,6 +284,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ steps.target.outputs.head }}
       - name: Sign in to OpenCode
         if: steps.carry_forward.outcome == 'skipped'
         env:
@@ -284,9 +326,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
-          BASE: ${{ github.event_name == 'workflow_dispatch' && steps.dispatch.outputs.pr_base || github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event_name == 'workflow_dispatch' && steps.dispatch.outputs.pr_head || github.event.pull_request.head.sha }}
+          PR: ${{ steps.target.outputs.pr }}
+          BASE: ${{ steps.target.outputs.base }}
+          HEAD: ${{ steps.target.outputs.head }}
           PR_JSON: ${{ runner.temp }}/pr.json
           CHANGED_FILES: ${{ runner.temp }}/changed-files.txt
         shell: bash
@@ -306,7 +348,7 @@ jobs:
         env:
           MODEL: ${{ steps.dispatch.outputs.primary_model || env.PRIMARY_MODEL }}
           PROMPT: |
-            You review pull request #${{ github.event.pull_request.number || inputs.pr_number }} in
+            You review pull request #${{ steps.target.outputs.pr }} in
             ${{ github.repository }}. You have no shell. Everything you need is in
             review-input/ in the checkout:
             - rules/AGENTS.md, rules/CONTRIBUTING.md: the rules as they stand on
@@ -455,7 +497,7 @@ jobs:
           MODEL: ${{ env.REVIEW_MODEL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR: ${{ steps.target.outputs.pr }}
           DIFF: review-input/diff.patch
           EVENTS: ${{ runner.temp }}/review-events.jsonl
         shell: bash
