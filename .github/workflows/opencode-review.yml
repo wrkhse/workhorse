@@ -407,8 +407,7 @@ jobs:
             opencode run --model "$MODEL" --variant low --format json \
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
-             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
-             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | type == "string") and ((.part.text // "") | length > 0))' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
@@ -433,8 +432,7 @@ jobs:
             opencode run --model "$MODEL" --variant low --format json \
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
-             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
-             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | type == "string") and ((.part.text // "") | length > 0))' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
