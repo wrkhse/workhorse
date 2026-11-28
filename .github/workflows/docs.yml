@@ -464,7 +464,6 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          REVIEW_VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
           DIFF: review-input/diff.patch
           EVENTS: ${{ runner.temp }}/review-events.jsonl
         shell: bash
@@ -472,17 +471,38 @@ jobs:
       - name: Enforce review verdict
         if: always() && steps.carry_forward.outcome == 'skipped'
         env:
-          VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
 
-          verdict=missing
-          if [ -f "$VERDICT_FILE" ]; then
-            IFS= read -r verdict < "$VERDICT_FILE" || true
+          # gh api emits one JSON page per request; slurp the pages together.
+          if ! pages=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq 'map(select((.user.id == 41898282) and ((.body // "") | startswith("<!-- opencode-review -->"))))'); then
+            echo "::error::Could not read review comments for PR $PR at head $HEAD_SHA."
+            exit 1
           fi
+
+          if ! verdict=$(printf '%s\n' "$pages" | jq -s -r '
+            (add // []) as $comments
+            | if ($comments | length) == 0 then "NO_COMMENT"
+              else ($comments | sort_by(.id) | .[-1].body | split("\n") | .[1] // "") as $line
+              | if ($line | startswith("**Verdict: ") and endswith("**")) then
+                  $line | ltrimstr("**Verdict: ") | rtrimstr("**")
+                else "UNREADABLE" end
+              end
+          '); then
+            echo "::error::Could not parse the review comment verdict for PR $PR at head $HEAD_SHA."
+            exit 1
+          fi
+
           case "$verdict" in
             'MERGE AS IS'|ADVISORY) exit 0 ;;
+            NO_COMMENT) echo "::error::No marker review comment on PR $PR at head $HEAD_SHA."; exit 1 ;;
+            UNREADABLE) echo "::error::Review comment verdict line was unreadable on PR $PR at head $HEAD_SHA."; exit 1 ;;
+            'FIX FIRST') echo "::error::Review verdict is FIX FIRST for PR $PR at head $HEAD_SHA."; exit 1 ;;
+            *) echo "::error::Review verdict is $verdict for PR $PR at head $HEAD_SHA."; exit 1 ;;
           esac
-          echo "::error::Review verdict is $verdict; the review check fails."
-          exit 1
