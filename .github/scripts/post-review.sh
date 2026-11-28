@@ -228,7 +228,7 @@ marker_comment() {
   local verdict="$1" summary="$2" findings="$3"
 
   jq -n --arg marker "$review_marker" --arg verdict "$verdict" \
-    --argjson limit "$marker_comment_limit" \
+    --arg model "${MODEL:-}" --argjson limit "$marker_comment_limit" \
     --rawfile summary "$summary" --slurpfile findings "$findings" '
     def bullet:
       " (commit \(.commit))" as $suffix
@@ -243,7 +243,9 @@ marker_comment() {
     ($limit - 100) as $budget
     | "\n\n(Summary truncated.)" as $cut
     | ($summary | rtrimstr("\n")) as $text
-    | ([$marker, $verdict] | join("\n")) as $top
+    | ([$marker, $verdict]
+        + (if $model == "" then [] else ["Reviewer: \($model)"] end)
+        | join("\n")) as $top
     | ($top + (if $text == "" then "" else "\n" + $text end)) as $head
     | ($findings[0] | map(select(.severity == "MUST"))
         + map(select(.severity == "SHOULD"))) as $ordered
