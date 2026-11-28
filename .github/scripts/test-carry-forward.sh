@@ -148,12 +148,34 @@ if [ -z "$carry_line" ] || [ -z "$hash_line" ]; then
   echo 'FAIL: could not locate carry_forward or PR_BODY_HASH in the review workflow' >&2
   exit 1
 fi
-if awk -v s="$carry_line" -v e="$hash_line" \
-    'NR>s && NR<e && /BODY_HASH/ { found=1 } END { exit !found }' "$workflow"; then
+# Scan only the carry_forward step's own block: from its id line up to the
+# next step marker. BODY_HASH published by a later gather step is irrelevant.
+carry_block_has_body_hash() {
+  awk -v s="$carry_line" '
+    NR < s { next }
+    /^[[:space:]]*- (name|uses|run|id):/ { exit }
+    /BODY_HASH/ { found = 1; exit }
+    END { exit !found }
+  ' "$1"
+}
+if carry_block_has_body_hash "$workflow"; then
   echo 'FAIL: carry_forward reads BODY_HASH before gather computes it' >&2
   exit 1
 fi
 printf 'ok: carry_forward does not read BODY_HASH before gather\n'
+
+# Prove the guard above is not vacuous: inject BODY_HASH into a copy of the
+# step's own block and require the same scan to catch it.
+broken_workflow="$tmp/carry-forward-broken.yml"
+awk -v s="$carry_line" '
+  NR == s { print; print "          BODY_HASH: injected"; next }
+  { print }
+' "$workflow" > "$broken_workflow"
+if ! carry_block_has_body_hash "$broken_workflow"; then
+  echo 'FAIL: BODY_HASH-in-carry-forward negative case was not detected' >&2
+  exit 1
+fi
+printf 'ok: carry_forward BODY_HASH guard detects a broken step\n'
 
 # The first checkout inside the review job must precede carry_forward and state
 # an explicit fetch-depth; the pin of .github/scripts from BASE_SHA must sit

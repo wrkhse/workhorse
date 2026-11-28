@@ -57,9 +57,8 @@ material.
 Output, in this exact shape and nothing else. The first line must be
 the marker below, exactly. The posted verdict is derived from the
 findings JSON: FIX FIRST when any finding is a MUST, MERGE AS IS
-otherwise. The verdict line below is informational and may be
-omitted; when given, X is MERGE AS IS when there is no MUST and FIX
-FIRST otherwise:
+otherwise. The verdict line below is required; X is MERGE AS IS when
+there is no MUST and FIX FIRST otherwise:
 <!-- opencode-review -->
 **Verdict: X**
 Then give a short summary.
