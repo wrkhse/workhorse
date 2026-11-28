@@ -3,6 +3,8 @@ import { join, posix, resolve } from "node:path";
 import { github, hub, type Project } from "../../hub.config";
 import { SITE, SOURCES, SRC, type Pulled } from "./sources";
 
+// Review-gate proof: a small non-docs change.
+
 /** Where a project's files are on disk: this checkout for the hub, its clone for the rest. */
 export const rootOf = (project: Project) =>
   project.repo === hub.repo ? resolve(SITE, "..") : join(SOURCES, project.id);
