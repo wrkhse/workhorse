@@ -192,4 +192,16 @@ git restore --staged --worktree .github/tidy.env
 git restore --staged --worktree download.md
 rm -f download.md
 
+# Prove the hook works under the system bash on macOS with no staged Rust files.
+printf '# bash probe\n' > bash32.md
+git add bash32.md
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  /bin/bash --version
+  if ! /bin/bash .githooks/pre-commit; then
+    echo 'hook failed under /bin/bash' >&2
+    exit 1
+  fi
+fi
+git commit -qm 'fmt: system bash probe'
+
 echo 'pre-commit hook selftest: all cases passed'
