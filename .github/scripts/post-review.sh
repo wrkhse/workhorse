@@ -229,6 +229,7 @@ marker_comment() {
 
   jq -n --arg marker "$review_marker" --arg verdict "$verdict" \
     --arg model "${MODEL:-}" --argjson limit "$marker_comment_limit" \
+    --arg head "${HEAD_SHA:-}" \
     --rawfile summary "$summary" --slurpfile findings "$findings" '
     def bullet:
       " (commit \(.commit))" as $suffix
@@ -245,6 +246,7 @@ marker_comment() {
     | ($summary | rtrimstr("\n")) as $text
     | ([$marker, $verdict]
         + (if $model == "" then [] else ["Reviewer: \($model)"] end)
+        + (if $head == "" then [] else ["Reviewed head: \($head)"] end)
         | join("\n")) as $top
     | ($top + (if $text == "" then "" else "\n" + $text end)) as $head
     | ($findings[0] | map(select(.severity == "MUST"))
