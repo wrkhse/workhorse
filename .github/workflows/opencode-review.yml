@@ -399,7 +399,7 @@ jobs:
             After gathering material, write the review immediately. Never end your reply with a tool call, a plan, or a description of what you read; your reply must always end with the findings JSON block. If you are asked to summarize, output exactly that review text starting with the marker, not a description of your work.
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           events="$RUNNER_TEMP/review-events.jsonl"
           printf '%s' "$PROMPT" > "$RUNNER_TEMP/review-prompt.txt"
           status=0
@@ -407,7 +407,8 @@ jobs:
             opencode run --model "$MODEL" --variant low --format json \
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
-             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
+             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | contains("<!-- opencode-review -->")))' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
@@ -425,14 +426,15 @@ jobs:
           MODEL: ${{ env.REVIEW_FALLBACK_MODEL }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           events="$RUNNER_TEMP/review-events.jsonl"
           status=0
           timeout --kill-after=10s "${REVIEW_TIMEOUT_SEC}s" \
             opencode run --model "$MODEL" --variant low --format json \
             < "$RUNNER_TEMP/review-prompt.txt" > "$events" || status=$?
           if [ "$status" -eq 0 ] && [ -s "$events" ] && \
-             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null; then
+             jq -es 'any(.[]; .type == "error") | not' "$events" > /dev/null && \
+             jq -es 'any(.[]; .type == "text" and ((.part.text // "") | contains("<!-- opencode-review -->")))' "$events" > /dev/null; then
             echo "failed=false" >> "$GITHUB_OUTPUT"
             echo "REVIEW_MODEL=$MODEL" >> "$GITHUB_ENV"
           else
