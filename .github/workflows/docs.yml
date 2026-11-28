@@ -83,13 +83,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install tidy v2.0.0
+      - name: Install tidy
         working-directory: ${{ runner.temp }}
         run: |
-          curl -fsSL -o tidy.tar.gz \
-            https://github.com/lukeed/tidy/releases/download/v2.0.0/tidy-x86_64-unknown-linux-musl.tar.gz
-          echo "4b8166b1cdde610fd783f2d59511b0fb35d15ef96069ef20642b948ab90907ea  tidy.tar.gz" \
-            | sha256sum -c -
+          pin() {
+            awk -F= -v key="$1" '$1==key { print substr($0, index($0,"=")+1); exit }' "$GITHUB_WORKSPACE/.github/tidy.env"
+          }
+          curl -fsSL -o tidy.tar.gz "$(pin TIDY_RELEASE_BASE)/$(pin TIDY_VERSION)/$(pin TIDY_LINUX_ASSET)"
+          echo "$(pin TIDY_LINUX_SHA256)  tidy.tar.gz" | sha256sum -c -
           mkdir tidy-bin
           tar -xzf tidy.tar.gz -C tidy-bin tidy
           echo "$RUNNER_TEMP/tidy-bin" >> "$GITHUB_PATH"

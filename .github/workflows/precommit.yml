@@ -1,0 +1,77 @@
+name: Pre-commit hook
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: precommit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Filter hook paths
+        id: filter
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed"
+          if grep -qE '^(.githooks/|.github/tidy.env$|.github/scripts/test-pre-commit.sh$|.github/workflows/precommit.yml$)' "$RUNNER_TEMP/changed"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  selftest:
+    needs: paths
+    if: needs.paths.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: Hook selftest
+        run: bash .github/scripts/test-pre-commit.sh
+
+  summary:
+    if: always()
+    needs: [paths, selftest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Report result
+        run: |
+          paths_result="${{ needs.paths.result }}"
+          result="${{ needs.selftest.result }}"
+          if [ "$paths_result" != "success" ] || [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+            echo "::error::hook selftest did not pass (paths=$paths_result, selftest=$result)"
+            exit 1
+          fi
+          echo "hook selftest: ${result:-skipped} (success when skipped)"
