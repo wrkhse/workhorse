@@ -165,6 +165,6 @@ end-to-end flow.
 
 ## Decided
 
-| Choice                                        | By    | When       |
-| --------------------------------------------- | ----- | ---------- |
-| Homebrew distribution goes through wrkhse/tap | owner | 2026-11-27 |
+| Choice                                                                                                                            | By    | When       |
+| --------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------- |
+| Homebrew distribution for every released Workhorse product, through a new org tap — installs are `brew install wrkhse/tap/<name>` | owner | 2026-11-27 |
