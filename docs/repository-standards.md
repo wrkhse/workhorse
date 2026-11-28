@@ -168,3 +168,4 @@ end-to-end flow.
 | Choice                                                                                                                            | By    | When       |
 | --------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------- |
 | Homebrew distribution for every released Workhorse product, through a new org tap — installs are `brew install wrkhse/tap/<name>` | owner | 2026-11-27 |
+| Review-gate integrity is guarded at merge: any PR touching review workflows, .github/scripts, the prompt or required checks is diff-checked by the manager before merge (owner, 11-28; org-level required workflows are Enterprise-only). | owner | 2026-11-28 |
