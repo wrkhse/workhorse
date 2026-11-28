@@ -375,6 +375,7 @@ jobs:
       # Posts the marker comment and inline review, then removes or
       # minimizes earlier ones.
       - name: Post review
+        id: post_review
         if: >-
           always() && steps.carry_forward.outputs.carried != 'true' &&
           ((steps.review_primary.outcome == 'success' &&
@@ -394,7 +395,9 @@ jobs:
         shell: bash
         run: bash .github/scripts/post-review.sh
       - name: Enforce review verdict
-        if: always() && steps.carry_forward.outputs.carried != 'true'
+        if: >-
+          always() && steps.carry_forward.outputs.carried != 'true' &&
+          steps.post_review.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -402,3 +405,12 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: bash .github/scripts/enforce-review-verdict.sh
+      - name: Require a fresh posted review
+        if: >-
+          always() && steps.carry_forward.outputs.carried != 'true' &&
+          steps.post_review.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::error::No fresh review was posted at this head; the merge gate cannot pass."
+          exit 1
