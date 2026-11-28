@@ -1,11 +1,16 @@
 name: OpenCode review
 
 on:
+  push:
+    branches: [main]
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: opencode-review-${{ github.event.pull_request.number }}
+  group: opencode-review-${{ github.event_name == 'pull_request' && github.event.pull_request.number || format('{0}-{1}', github.event_name, github.run_id) }}
   cancel-in-progress: true
 
 jobs:
@@ -25,14 +30,34 @@ jobs:
         id: filter
         shell: bash
         env:
+          EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+            echo "self=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Fetch the base ref by name so the diff uses the PR's current base
-          # branch.
-          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          base="origin/$BASE_REF"
+          # branch. A push has no base ref, so compare with its parent commit.
+          if [ "$EVENT" = pull_request ]; then
+            git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            base="origin/$BASE_REF"
+          elif [ "$EVENT" = push ]; then
+            zero=0000000000000000000000000000000000000000
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ]; then
+              base="$BEFORE"
+            else
+              base="HEAD~1"
+            fi
+          else
+            echo "::error::unsupported event $EVENT"
+            exit 1
+          fi
+
           changed=$(git -c core.quotePath=false diff --name-only "$base" HEAD)
 
           self=false

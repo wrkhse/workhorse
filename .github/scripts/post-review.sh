@@ -643,6 +643,20 @@ main() (
     "$temp/comment-response.json")
   printf 'Posted review comment %s.\n' "$comment_id"
 
+  if [ -n "${REVIEW_VERDICT_FILE:-}" ]; then
+    IFS= read -r verdict < "$temp/verdict"
+    case "$verdict" in
+      '**Verdict: MERGE AS IS**') bare='MERGE AS IS' ;;
+      '**Verdict: FIX FIRST**') bare='FIX FIRST' ;;
+      '**Verdict: ADVISORY**') bare='ADVISORY' ;;
+      *) bare=unknown ;;
+    esac
+    if [ "$docs_only" = true ]; then
+      bare=ADVISORY
+    fi
+    printf '%s\n' "$bare" > "$REVIEW_VERDICT_FILE"
+  fi
+
   review_id=$(post_review "$temp/review.json" "$temp/review-response.json")
   printf 'Posted review %s.\n' "$review_id"
 

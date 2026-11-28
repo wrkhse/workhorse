@@ -464,7 +464,25 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
           DIFF: review-input/diff.patch
           EVENTS: ${{ runner.temp }}/review-events.jsonl
         shell: bash
         run: bash .github/scripts/post-review.sh
+      - name: Enforce review verdict
+        if: always() && steps.carry_forward.outcome == 'skipped'
+        env:
+          VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verdict=missing
+          if [ -f "$VERDICT_FILE" ]; then
+            IFS= read -r verdict < "$VERDICT_FILE" || true
+          fi
+          case "$verdict" in
+            'MERGE AS IS'|ADVISORY) exit 0 ;;
+          esac
+          echo "::error::Review verdict is $verdict; the review check fails."
+          exit 1
