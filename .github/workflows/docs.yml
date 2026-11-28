@@ -150,7 +150,3 @@ jobs:
             exit 1
           fi
           echo "tidy check exited 2 on an unparsable tidy.json, and the format job's handler named it a parse or config error"
-
-      - name: "Proof: force red gate"
-        shell: bash
-        run: exit 1
