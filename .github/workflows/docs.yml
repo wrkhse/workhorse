@@ -244,6 +244,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Use base review scripts
+        if: steps.carry_forward.outcome == 'skipped'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: git checkout "$BASE_SHA" -- .github/scripts
       - name: Sign in to OpenCode
         if: steps.carry_forward.outcome == 'skipped'
         env:
@@ -457,6 +463,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DIFF: review-input/diff.patch
           EVENTS: ${{ runner.temp }}/review-events.jsonl
         shell: bash
