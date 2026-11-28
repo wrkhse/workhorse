@@ -158,8 +158,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      # Reading commit check-runs to carry forward a verdict needs checks: read.
-      checks: read
+      # Reading commit check-runs to carry forward a verdict and writing the
+      # review check-run need checks: write.
+      checks: write
       # Commenting and reacting on a pull request needs pull-requests: write.
       pull-requests: write
       issues: write
@@ -242,6 +243,34 @@ jobs:
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
+      - name: Start PR review check
+        id: pr_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.target.outputs.head }}
+          PR: ${{ steps.target.outputs.pr }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          payload=$(jq -n \
+            --arg name review \
+            --arg head_sha "$HEAD_SHA" \
+            --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg details_url "https://github.com/$REPO/actions/runs/$RUN_ID" \
+            --arg external_id "opencode-review-$RUN_ID" \
+            '{name: $name, head_sha: $head_sha, status: "in_progress",
+              started_at: $started_at, details_url: $details_url,
+              external_id: $external_id}')
+          id=$(gh api --method POST "repos/$REPO/check-runs" --input - \
+            --jq .id <<< "$payload")
+          if [ -z "$id" ] || [ "$id" = null ]; then
+            echo "::error::No check-run id returned when starting the PR review check." >&2
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
       # A title/body-only edit has no new commits. Reuse the most recent
       # completed review verdict for this exact head SHA; never run the model.
       - name: Carry forward review on title/body edit
@@ -284,7 +313,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ steps.target.outputs.head }}
+      # The PR head is data, never code: use only the review scripts from
+      # the base branch, wherever the checkout defaulted to.
+      - name: Use base review scripts
+        if: steps.carry_forward.outcome == 'skipped'
+        env:
+          BASE_SHA: ${{ steps.target.outputs.base }}
+        shell: bash
+        run: git checkout "$BASE_SHA" -- .github/scripts
       - name: Sign in to OpenCode
         if: steps.carry_forward.outcome == 'skipped'
         env:
@@ -500,5 +536,42 @@ jobs:
           PR: ${{ steps.target.outputs.pr }}
           DIFF: review-input/diff.patch
           EVENTS: ${{ runner.temp }}/review-events.jsonl
+          REVIEW_VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
         shell: bash
         run: bash .github/scripts/post-review.sh
+      - name: Finish PR review check
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CHECK_ID: ${{ steps.pr_check.outputs.id }}
+          VERDICT_FILE: ${{ runner.temp }}/review-verdict.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CHECK_ID" ]; then
+            echo "::error::No PR review check-run id to complete."
+            exit 1
+          fi
+
+          verdict=missing
+          if [ -f "$VERDICT_FILE" ]; then
+            IFS= read -r verdict < "$VERDICT_FILE" || true
+          fi
+          case "$verdict" in
+            'MERGE AS IS'|ADVISORY) conclusion=success ;;
+            *) conclusion=failure ;;
+          esac
+
+          payload=$(jq -n \
+            --arg conclusion "$conclusion" \
+            --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg title "Review: $verdict" \
+            --arg summary "The opencode review verdict is $verdict." \
+            '{status: "completed", conclusion: $conclusion,
+              completed_at: $completed_at,
+              output: {title: $title, summary: $summary}}')
+          gh api --method PATCH "repos/$REPO/check-runs/$CHECK_ID" \
+            --input - <<< "$payload" > /dev/null
+          echo "Review check run $CHECK_ID completed: $conclusion (verdict: $verdict)."

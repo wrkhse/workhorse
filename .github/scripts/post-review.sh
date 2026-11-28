@@ -614,6 +614,18 @@ prepare() {
     verdict='**Verdict: ADVISORY**'
   fi
 
+  # Hand the gate a bare token, not the formatted comment verdict. An
+  # unexpected value fails closed when the check run is completed.
+  if [ -n "${REVIEW_VERDICT_FILE:-}" ]; then
+    case "$verdict" in
+      '**Verdict: MERGE AS IS**') bare='MERGE AS IS' ;;
+      '**Verdict: FIX FIRST**') bare='FIX FIRST' ;;
+      '**Verdict: ADVISORY**') bare='ADVISORY' ;;
+      *) bare=unknown ;;
+    esac
+    printf '%s\n' "$bare" > "$REVIEW_VERDICT_FILE" || return 2
+  fi
+
   marker_comment "$verdict" "$work/summary" "$work/findings.json" \
     > "$work/comment.json"
   right_lines "$diff" > "$work/right-lines"
